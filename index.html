@@ -279,7 +279,7 @@
 const SUPABASE_URL = 'https://jqxdetrfhvvdcdgawxao.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxeGRldHJmaHZ2ZGNkZ2F3eGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MjE5MDEsImV4cCI6MjA5MjE5NzkwMX0.8AS9cYt85Z0rH_TPLeJ4x7u4SD_pQmij6CFAERYAbTY';
 
-let supabase = null;
+let sbClient = null;
 let dbEnabled = false;
 
 // In-memory cache of crowdsourced timing per light id
@@ -287,7 +287,7 @@ const timingCache = {};
 
 (function() {
   try {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    sbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     dbEnabled = true;
     console.log('Supabase connected');
   } catch(e) {
@@ -316,9 +316,9 @@ async function reportPhase(phase) {
     lon: primaryLight.lon
   };
 
-  if (dbEnabled && supabase) {
+  if (dbEnabled && sbClient) {
     try {
-      const { error } = await supabase.from('signal_reports').insert([report]);
+      const { error } = await sbClient.from('signal_reports').insert([report]);
       if (error) throw error;
       showSuccess(`✓ ${phase.toUpperCase()} reported — helping calibrate this light`);
     } catch(e) {
@@ -344,14 +344,14 @@ async function getCrowdsourcedTiming(lightId) {
   const cached = timingCache[lightId];
   if (cached && (Date.now() - cached.computedAt) < 300000) return cached;
 
-  if (!dbEnabled || !supabase) {
+  if (!dbEnabled || !sbClient) {
     // Try local storage
     return computeTimingFromReports(lightId, getLocalReports(lightId));
   }
 
   try {
     // Get last 200 reports for this light
-    const { data, error } = await supabase
+    const { data, error } = await sbClient
       .from('signal_reports')
       .select('phase, reported_at')
       .eq('light_id', lightId)

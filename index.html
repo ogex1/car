@@ -6,437 +6,169 @@
 <title>GLOSA — Green Light Advisor</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #080c10;
-    --panel: #0e1318;
-    --card: #131920;
-    --border: #1c2530;
-    --green: #00e676;
-    --yellow: #ffd740;
-    --red: #ff1744;
-    --blue: #2979ff;
-    --text: #dde6f0;
-    --muted: #4a5a6a;
-    --dim: #1e2d3d;
+    --bg: #080c10; --panel: #0e1318; --card: #131920; --border: #1c2530;
+    --green: #00e676; --yellow: #ffd740; --red: #ff1744; --blue: #2979ff;
+    --orange: #ff6d00; --text: #dde6f0; --muted: #4a5a6a; --dim: #1e2d3d;
   }
-
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Barlow Condensed', sans-serif; overflow: hidden; }
 
-  html, body {
-    height: 100%;
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Barlow Condensed', sans-serif;
-    overflow: hidden;
-  }
-
-  /* ── MAP ───────────────────────────────────── */
-  #map {
-    position: fixed;
-    inset: 0;
-    z-index: 0;
-    filter: brightness(0.55) saturate(0.6) hue-rotate(190deg);
-  }
-
+  #map { position: fixed; inset: 0; z-index: 0; filter: brightness(0.55) saturate(0.6) hue-rotate(190deg); }
+  #map.operator-mode { cursor: crosshair !important; }
   .leaflet-control-zoom { display: none; }
-  .leaflet-control-attribution { font-size: 9px; opacity: 0.4; }
+  .leaflet-control-attribution { font-size: 9px; opacity: 0.35; }
 
-  /* ── TOP HUD ───────────────────────────────── */
+  .leaflet-popup-content-wrapper {
+    background: #0e1318 !important; border: 1px solid #1c2530 !important;
+    border-radius: 12px !important; box-shadow: 0 4px 24px rgba(0,0,0,0.7) !important; padding: 0 !important;
+  }
+  .leaflet-popup-content { margin: 0 !important; width: auto !important; }
+  .leaflet-popup-tip { background: #0e1318 !important; }
+  .leaflet-popup-close-button { color: #4a5a6a !important; top: 8px !important; right: 10px !important; font-size: 16px !important; }
+
+  /* TOP HUD */
   #topHud {
-    position: fixed;
-    top: 0; left: 0; right: 0;
-    z-index: 10;
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
     padding: 14px 16px 10px;
     background: linear-gradient(to bottom, rgba(8,12,16,0.95) 0%, rgba(8,12,16,0) 100%);
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    display: flex; align-items: center; gap: 8px;
   }
-
-  .app-title {
-    font-size: 22px;
-    font-weight: 800;
-    letter-spacing: 3px;
-    color: var(--text);
-    text-transform: uppercase;
-    flex-shrink: 0;
-  }
-
+  .app-title { font-size: 22px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; flex-shrink: 0; }
   .app-title span { color: var(--green); }
 
   .gps-pill {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 5px 12px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
+    display: flex; align-items: center; gap: 6px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 12px;
+    font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted);
+    transition: border-color 0.3s, color 0.3s; flex-shrink: 0;
+  }
+  .gps-pill.active   { border-color: var(--green);  color: var(--green); }
+  .gps-pill.acquiring{ border-color: var(--yellow); color: var(--yellow); }
+  .gps-pill.error    { border-color: var(--red);    color: var(--red); }
+  .gps-pill.operator { border-color: var(--orange); color: var(--orange); }
+  .gps-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .gps-pill.active .gps-dot, .gps-pill.operator .gps-dot { animation: blink 1.5s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  /* Speed badge */
+  #speedBadge {
     margin-left: auto;
-    transition: border-color 0.3s, color 0.3s;
+    display: flex; align-items: baseline; gap: 4px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 14px; transition: border-color 0.3s;
+  }
+  #speedBadge.moving { border-color: var(--blue); }
+  #speedVal  { font-size: 20px; font-weight: 800; letter-spacing: -0.5px; color: var(--text); }
+  #speedUnit { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+
+  /* Operator banner */
+  #operatorBanner {
+    position: fixed; top: 56px; left: 0; right: 0; z-index: 15;
+    background: rgba(255,109,0,0.12); border-bottom: 1px solid rgba(255,109,0,0.3);
+    padding: 8px 16px; font-family: 'DM Mono', monospace; font-size: 11px;
+    color: var(--orange); text-align: center; letter-spacing: 1px; display: none;
   }
 
-  .gps-pill.active { border-color: var(--green); color: var(--green); }
-  .gps-pill.acquiring { border-color: var(--yellow); color: var(--yellow); }
-  .gps-pill.error { border-color: var(--red); color: var(--red); }
-
-  .gps-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-  }
-
-  .gps-pill.active .gps-dot { animation: pulse 1.5s ease-in-out infinite; }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-  }
-
-  /* ── BOTTOM PANEL ──────────────────────────── */
-  #bottomPanel {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    z-index: 10;
-    padding: 0 12px 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    pointer-events: none;
-  }
-
-  #bottomPanel > * { pointer-events: all; }
-
-  /* ── ADVISORY CARD ─────────────────────────── */
-  #advisoryCard {
-    background: rgba(13,19,24,0.96);
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 16px 18px;
-    display: none;
-    position: relative;
-    overflow: hidden;
-    backdrop-filter: blur(12px);
-    transition: border-color 0.35s;
-  }
-
-  #advisoryCard.green { border-color: var(--green); }
-  #advisoryCard.yellow { border-color: var(--yellow); }
-  #advisoryCard.red { border-color: var(--red); }
-
-  #advisoryCard::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 3px;
-    transition: background 0.35s;
-  }
-
-  #advisoryCard.green::before { background: var(--green); box-shadow: 0 0 16px var(--green); }
-  #advisoryCard.yellow::before { background: var(--yellow); box-shadow: 0 0 16px var(--yellow); }
-  #advisoryCard.red::before { background: var(--red); box-shadow: 0 0 16px var(--red); }
-
-  .advisory-inner {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-  }
-
-  /* Traffic light widget */
-  .tl-widget {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 5px;
-    background: #050709;
-    border: 1px solid #1a2030;
-    border-radius: 10px;
-    padding: 8px 7px;
-    flex-shrink: 0;
-  }
-
-  .tl-bulb {
-    width: 16px; height: 16px;
-    border-radius: 50%;
-    opacity: 0.15;
-    transition: opacity 0.3s, box-shadow 0.3s;
-  }
-
-  .tl-bulb.r { background: var(--red); }
-  .tl-bulb.y { background: var(--yellow); }
-  .tl-bulb.g { background: var(--green); }
-  .tl-bulb.lit { opacity: 1; }
-  .tl-bulb.r.lit { box-shadow: 0 0 14px var(--red); }
-  .tl-bulb.y.lit { box-shadow: 0 0 14px var(--yellow); }
-  .tl-bulb.g.lit { box-shadow: 0 0 14px var(--green); }
-
-  /* Speed + info */
-  .advisory-body { flex: 1; min-width: 0; }
-
-  .advisory-speed-row {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-  }
-
-  .advisory-speed {
-    font-size: 64px;
-    font-weight: 800;
-    line-height: 1;
-    letter-spacing: -2px;
-    transition: color 0.35s;
-    color: var(--text);
-  }
-
-  #advisoryCard.green .advisory-speed { color: var(--green); }
-  #advisoryCard.yellow .advisory-speed { color: var(--yellow); }
-  #advisoryCard.red .advisory-speed { color: var(--red); }
-
-  .advisory-unit {
-    font-family: 'DM Mono', monospace;
-    font-size: 13px;
-    color: var(--muted);
-    letter-spacing: 1px;
-  }
-
-  .advisory-countdown {
-    font-size: 13px;
-    font-family: 'DM Mono', monospace;
-    color: var(--muted);
-    margin-top: 2px;
-  }
-
-  .advisory-label-text {
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-top: 4px;
-    line-height: 1.2;
-  }
-
-  .advisory-distance {
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: var(--muted);
-    margin-top: 3px;
-  }
-
-  /* ── SIGNAL LIST ───────────────────────────── */
-  #signalList {
-    background: rgba(13,19,24,0.94);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    overflow: hidden;
-    display: none;
-    backdrop-filter: blur(10px);
-  }
-
-  .signal-list-header {
-    padding: 10px 14px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    justify-content: space-between;
-  }
-
-  .signal-items {
-    display: flex;
-    overflow-x: auto;
-    padding: 10px;
-    gap: 8px;
-    scrollbar-width: none;
-  }
-
-  .signal-items::-webkit-scrollbar { display: none; }
-
-  .signal-chip {
-    flex-shrink: 0;
-    background: var(--dim);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 8px 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    min-width: 70px;
-    cursor: pointer;
-    transition: border-color 0.2s;
-  }
-
-  .signal-chip.primary { border-color: var(--blue); }
-
-  .signal-chip-dot {
-    width: 10px; height: 10px;
-    border-radius: 50%;
-  }
-
-  .signal-chip-dist {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
-  }
-
-  .signal-chip-phase {
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
-
-  .signal-chip-timer {
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
-  }
-
-  /* ── START / CONTROL BAR ───────────────────── */
-  #controlBar {
-    display: flex;
-    gap: 8px;
-  }
-
-  .btn-main {
-    flex: 1;
-    background: var(--blue);
-    color: white;
-    border: none;
-    border-radius: 12px;
-    padding: 16px;
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: opacity 0.2s, transform 0.12s;
-  }
-
-  .btn-main:active { transform: scale(0.97); opacity: 0.85; }
-  .btn-main.stop { background: rgba(255,23,68,0.15); border: 1px solid var(--red); color: var(--red); }
-
-  .btn-recenter {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 0 18px;
-    color: var(--muted);
-    font-size: 20px;
-    cursor: pointer;
-    transition: border-color 0.2s, color 0.2s;
-    display: none;
-  }
-
-  .btn-recenter:hover { border-color: var(--blue); color: var(--text); }
-
-  /* ── SCANNING INDICATOR ────────────────────── */
+  /* Scan badge */
   #scanBadge {
-    position: fixed;
-    top: 60px; right: 16px;
-    z-index: 20;
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    padding: 5px 12px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    color: var(--muted);
-    display: none;
-    align-items: center;
-    gap: 6px;
+    position: fixed; top: 60px; right: 16px; z-index: 20;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 12px;
+    font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted);
+    display: none; align-items: center; gap: 6px;
   }
-
   #scanBadge.visible { display: flex; }
-
-  .scan-spinner {
-    width: 10px; height: 10px;
-    border: 1.5px solid var(--border);
-    border-top-color: var(--blue);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
+  .scan-spinner { width: 10px; height: 10px; border: 1.5px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── NO SIGNAL STATE ───────────────────────── */
-  #noSignalMsg {
-    background: rgba(13,19,24,0.94);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 16px;
-    text-align: center;
-    font-family: 'DM Mono', monospace;
-    font-size: 12px;
-    color: var(--muted);
-    display: none;
-    line-height: 1.7;
-    backdrop-filter: blur(10px);
+  /* Bottom panel */
+  #bottomPanel {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    padding: 0 12px 20px; display: flex; flex-direction: column; gap: 10px;
+    pointer-events: none;
   }
+  #bottomPanel > * { pointer-events: all; }
 
-  /* ── LOCATION MARKER ───────────────────────── */
-  .user-marker-outer {
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: rgba(41,121,255,0.25);
-    border: 2px solid var(--blue);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 0 4px rgba(41,121,255,0.12);
-    animation: locpulse 2s ease-in-out infinite;
+  /* Advisory card */
+  #advisoryCard {
+    background: rgba(13,19,24,0.96); border: 1px solid var(--border);
+    border-radius: 16px; padding: 16px 18px;
+    display: none; position: relative; overflow: hidden;
+    backdrop-filter: blur(12px); transition: border-color 0.35s;
   }
+  #advisoryCard.green  { border-color: var(--green); }
+  #advisoryCard.yellow { border-color: var(--yellow); }
+  #advisoryCard.red    { border-color: var(--red); }
+  #advisoryCard::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; transition: background 0.35s; }
+  #advisoryCard.green::before  { background: var(--green);  box-shadow: 0 0 16px var(--green); }
+  #advisoryCard.yellow::before { background: var(--yellow); box-shadow: 0 0 16px var(--yellow); }
+  #advisoryCard.red::before    { background: var(--red);    box-shadow: 0 0 16px var(--red); }
 
-  .user-marker-inner {
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    background: var(--blue);
-  }
+  .advisory-inner { display: flex; align-items: center; gap: 16px; }
+  .tl-widget { display: flex; flex-direction: column; align-items: center; gap: 5px; background: #050709; border: 1px solid #1a2030; border-radius: 10px; padding: 8px 7px; flex-shrink: 0; }
+  .tl-bulb { width: 16px; height: 16px; border-radius: 50%; opacity: 0.15; transition: opacity 0.3s, box-shadow 0.3s; }
+  .tl-bulb.r { background: var(--red); } .tl-bulb.y { background: var(--yellow); } .tl-bulb.g { background: var(--green); }
+  .tl-bulb.lit { opacity: 1; }
+  .tl-bulb.r.lit { box-shadow: 0 0 14px var(--red); } .tl-bulb.y.lit { box-shadow: 0 0 14px var(--yellow); } .tl-bulb.g.lit { box-shadow: 0 0 14px var(--green); }
+  .advisory-body { flex: 1; min-width: 0; }
+  .advisory-speed-row { display: flex; align-items: baseline; gap: 6px; }
+  .advisory-speed { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -2px; transition: color 0.35s; color: var(--text); }
+  #advisoryCard.green .advisory-speed  { color: var(--green); }
+  #advisoryCard.yellow .advisory-speed { color: var(--yellow); }
+  #advisoryCard.red .advisory-speed    { color: var(--red); }
+  .advisory-unit { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--muted); letter-spacing: 1px; }
+  .advisory-label-text { font-size: 18px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-top: 4px; line-height: 1.2; }
+  .advisory-countdown { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--muted); margin-top: 2px; }
+  .advisory-distance { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 3px; }
 
-  @keyframes locpulse {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(41,121,255,0.12); }
-    50% { box-shadow: 0 0 0 10px rgba(41,121,255,0.04); }
-  }
+  /* Signal list */
+  #signalList { background: rgba(13,19,24,0.94); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; display: none; backdrop-filter: blur(10px); }
+  .signal-list-header { padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
+  .signal-items { display: flex; overflow-x: auto; padding: 10px; gap: 8px; scrollbar-width: none; }
+  .signal-items::-webkit-scrollbar { display: none; }
+  .signal-chip { flex-shrink: 0; background: var(--dim); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 70px; }
+  .signal-chip.primary { border-color: var(--blue); }
+  .signal-chip-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .signal-chip-dist { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+  .signal-chip-phase { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .signal-chip-timer { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
 
-  /* ── LIGHT MARKERS ─────────────────────────── */
-  .light-marker {
-    width: 14px; height: 14px;
-    border-radius: 50%;
-    border: 2px solid rgba(0,0,0,0.5);
-    cursor: pointer;
-    transition: transform 0.2s;
-  }
+  /* Control bar */
+  #controlBar { display: flex; gap: 8px; }
+  .btn-main { flex: 1; background: var(--blue); color: white; border: none; border-radius: 12px; padding: 16px; font-family: 'Barlow Condensed', sans-serif; font-size: 18px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; cursor: pointer; transition: opacity 0.2s, transform 0.12s; }
+  .btn-main:active { transform: scale(0.97); opacity: 0.85; }
+  .btn-main.stop { background: rgba(255,23,68,0.15); border: 1px solid var(--red); color: var(--red); }
+  .btn-icon { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 0 15px; color: var(--muted); font-size: 20px; cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s; display: none; align-items: center; justify-content: center; min-height: 52px; }
+  .btn-icon:hover { border-color: var(--blue); color: var(--text); }
+  .btn-icon.active { border-color: var(--orange); color: var(--orange); background: rgba(255,109,0,0.08); }
+  .btn-icon.visible { display: flex; }
 
-  .light-marker.primary {
-    width: 18px; height: 18px;
-    border: 2.5px solid white;
-    box-shadow: 0 0 12px currentColor;
-  }
+  /* Popup */
+  .light-popup { padding: 14px 16px; min-width: 210px; font-family: 'Barlow Condensed', sans-serif; }
+  .popup-phase-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .popup-bulb { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; }
+  .popup-phase-label { font-size: 22px; font-weight: 800; letter-spacing: 1px; }
+  .popup-timer { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); }
+  .popup-divider { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+  .popup-row { display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); padding: 2px 0; }
+  .popup-row span:last-child { color: var(--text); }
+  .popup-cycle { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 10px; gap: 1px; }
+  .popup-cycle-seg { height: 100%; }
 
-  /* error toast */
-  #errToast {
-    position: fixed;
-    top: 70px; left: 16px; right: 16px;
-    z-index: 30;
-    background: rgba(255,23,68,0.12);
-    border: 1px solid rgba(255,23,68,0.35);
-    border-radius: 10px;
-    padding: 10px 14px;
-    font-family: 'DM Mono', monospace;
-    font-size: 11px;
-    color: #ff6b8a;
-    line-height: 1.5;
-    display: none;
-  }
+  /* No signal */
+  #noSignalMsg { background: rgba(13,19,24,0.94); border: 1px solid var(--border); border-radius: 14px; padding: 16px; text-align: center; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); display: none; line-height: 1.7; backdrop-filter: blur(10px); }
+  #errToast { position: fixed; top: 70px; left: 16px; right: 16px; z-index: 30; background: rgba(255,23,68,0.12); border: 1px solid rgba(255,23,68,0.35); border-radius: 10px; padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 11px; color: #ff6b8a; line-height: 1.5; display: none; }
+
+  /* User / scout markers */
+  .user-marker-outer { width: 22px; height: 22px; border-radius: 50%; background: rgba(41,121,255,0.25); border: 2px solid var(--blue); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 4px rgba(41,121,255,0.12); animation: locpulse 2s ease-in-out infinite; }
+  .user-marker-inner { width: 10px; height: 10px; border-radius: 50%; background: var(--blue); }
+  @keyframes locpulse { 0%,100%{ box-shadow: 0 0 0 4px rgba(41,121,255,0.12); } 50%{ box-shadow: 0 0 0 10px rgba(41,121,255,0.04); } }
+  .scout-marker-outer { width: 24px; height: 24px; border-radius: 50%; background: rgba(255,109,0,0.2); border: 2px solid var(--orange); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 4px rgba(255,109,0,0.1); }
+  .scout-marker-inner { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }
 </style>
 </head>
 <body>
@@ -445,21 +177,15 @@
 
 <div id="topHud">
   <div class="app-title">GL<span>O</span>SA</div>
-  <div class="gps-pill" id="gpsPill">
-    <div class="gps-dot"></div>
-    <span id="gpsLabel">STANDBY</span>
-  </div>
+  <div class="gps-pill" id="gpsPill"><div class="gps-dot"></div><span id="gpsLabel">STANDBY</span></div>
+  <div id="speedBadge"><span id="speedVal">0</span><span id="speedUnit">MPH</span></div>
 </div>
 
-<div id="scanBadge">
-  <div class="scan-spinner"></div>
-  <span>SCANNING</span>
-</div>
-
+<div id="operatorBanner">⚠ OPERATOR MODE — TAP MAP TO MOVE YOUR POSITION</div>
+<div id="scanBadge"><div class="scan-spinner"></div><span>SCANNING</span></div>
 <div id="errToast"></div>
 
 <div id="bottomPanel">
-
   <div id="advisoryCard">
     <div class="advisory-inner">
       <div class="tl-widget">
@@ -481,8 +207,7 @@
 
   <div id="signalList">
     <div class="signal-list-header">
-      <span>Signals Ahead</span>
-      <span id="signalCount"></span>
+      <span>Signals Nearby</span><span id="signalCount"></span>
     </div>
     <div class="signal-items" id="signalItems"></div>
   </div>
@@ -491,278 +216,213 @@
 
   <div id="controlBar">
     <button class="btn-main" id="mainBtn" onclick="handleMainBtn()">START</button>
-    <button class="btn-recenter" id="recenterBtn" onclick="recenter()" title="Re-center map">⊕</button>
+    <button class="btn-icon" id="recenterBtn" onclick="recenter()" title="Re-center map">⊕</button>
+    <button class="btn-icon" id="operatorBtn" onclick="toggleOperator()" title="Operator: tap map to move position">✛</button>
+    <button class="btn-icon" id="scoutBtn" onclick="toggleScout()" title="Scout: tap map to scan lights at any location">⊛</button>
   </div>
-
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════
-// CONFIG
-// ═══════════════════════════════════════════════════════════
 const OVERPASS_PROXY = 'https://overpass.private.coffee/api/interpreter';
-const SEARCH_RADIUS  = 500;   // meters
-const REQUERY_DIST   = 200;   // meters before re-querying OSM
-const UPDATE_MS      = 1000;  // signal prediction refresh
-const MAX_SPEED      = 60;
+const SEARCH_RADIUS  = 800;
+const SCOUT_RADIUS   = 300;
+const REQUERY_DIST   = 250;
+const UPDATE_MS      = 1000;
+const MAX_SPEED      = 65;
 const MIN_SPEED      = 5;
 
-// ═══════════════════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════════════════
-let map, userMarker, accuracyCircle;
-let lightMarkers = {};
-let watching     = false;
-let watchId      = null;
-let tickTimer    = null;
-let userPos      = null;
-let lastQueryPos = null;
-let lights       = [];       // [{id, lat, lon}]
-let userHeading  = null;
-let userSpeedMph = 0;
-let prevGpsPos   = null;
+let map, userMarker, accuracyCircle, scoutMarker, scoutCircle;
+let lightMarkers = {}, scoutLightMarkers = {};
+let watching = false, operatorMode = false, scoutMode = false;
+let watchId = null, tickTimer = null;
+let userPos = null, lastQueryPos = null, scoutPos = null;
+let lights = [], scoutLights = [];
+let userHeading = null, userSpeedMph = 0, prevGpsPos = null;
 
-// ═══════════════════════════════════════════════════════════
-// MAP INIT
-// ═══════════════════════════════════════════════════════════
-function initMap() {
-  map = L.map('map', {
-    zoomControl: false,
-    attributionControl: true,
-    center: [39.8, -98.5],
-    zoom: 5
-  });
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors',
-    maxZoom: 19
-  }).addTo(map);
-}
-
-// ═══════════════════════════════════════════════════════════
-// SIGNAL PREDICTION MODEL
-// ═══════════════════════════════════════════════════════════
+// ── Signal prediction ──
 function getTimingPlan(hour) {
   if (hour >= 7  && hour < 9)  return { red: 58, green: 42, yellow: 4 };
   if (hour >= 16 && hour < 19) return { red: 68, green: 48, yellow: 4 };
   if (hour >= 22 || hour < 6)  return { red: 38, green: 28, yellow: 3 };
   return                              { red: 52, green: 38, yellow: 4 };
 }
-
-function hashId(id) {
-  // deterministic per-intersection phase offset (0 to cycle length)
-  return ((BigInt(id) * 2654435761n) & 0xFFFFFFFFn);
-}
-
+function hashId(id) { return Number(BigInt(id) * 2654435761n & 0xFFFFFFFFn); }
 function predictSignal(lightId) {
-  const now   = Date.now() / 1000;
-  const hour  = new Date().getHours();
-  const plan  = getTimingPlan(hour);
-  const cycle = plan.red + plan.green + plan.yellow;
-
-  const seed   = Number(hashId(BigInt(lightId)) % BigInt(Math.round(cycle * 1000))) / 1000;
-  const t      = (now + seed) % cycle;
-
+  const now = Date.now() / 1000, hour = new Date().getHours();
+  const plan = getTimingPlan(hour), cycle = plan.red + plan.green + plan.yellow;
+  const seed = (hashId(lightId) % Math.round(cycle * 100)) / 100;
+  const t = (now + seed) % cycle;
   let phase, timeLeft, nextGreenIn;
-
   if (t < plan.green) {
-    phase       = 'green';
-    timeLeft    = plan.green - t;
-    nextGreenIn = 0;
+    phase = 'green'; timeLeft = plan.green - t; nextGreenIn = 0;
   } else if (t < plan.green + plan.yellow) {
-    phase       = 'yellow';
-    timeLeft    = plan.green + plan.yellow - t;
-    nextGreenIn = timeLeft + plan.red;
+    phase = 'yellow'; timeLeft = plan.green + plan.yellow - t; nextGreenIn = timeLeft + plan.red;
   } else {
-    phase       = 'red';
-    timeLeft    = cycle - t;
-    nextGreenIn = timeLeft;
+    phase = 'red'; timeLeft = cycle - t; nextGreenIn = timeLeft;
   }
-
   return { phase, timeLeft: Math.round(timeLeft), nextGreenIn: Math.round(nextGreenIn), plan, cycle };
 }
 
-// ═══════════════════════════════════════════════════════════
-// GLOSA CALCULATION
-// ═══════════════════════════════════════════════════════════
+// ── GLOSA calc ──
 function calcGLOSA(distMeters, sig) {
-  if (distMeters < 8) return { speed: null, label: 'STOPPED', detail: 'At intersection', color: 'red' };
-
+  if (distMeters < 8) return { speed: null, label: 'AT LIGHT', detail: '', color: 'red' };
   const distMiles = distMeters / 1609.34;
   const { phase, timeLeft, nextGreenIn, plan } = sig;
-
   const clamp = v => Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(v)));
-  const mph   = s => distMiles / (s / 3600);
-
+  const mph = s => distMiles / (s / 3600);
   if (phase === 'green') {
-    const windowEnd = timeLeft - 1.5;
-    if (windowEnd > 1) {
-      const ideal = mph(windowEnd * 0.6);
-      if (ideal >= MIN_SPEED && ideal <= MAX_SPEED) {
-        return { speed: clamp(ideal), label: 'CATCH GREEN', detail: `Green ends in ${timeLeft}s`, color: 'green' };
-      }
-    }
-    // miss this green — target next
-    const nextStart = timeLeft + plan.yellow + plan.red;
-    const nextMid   = nextStart + plan.green * 0.4;
-    return { speed: clamp(mph(nextMid)), label: 'NEXT GREEN', detail: `Next green in ${Math.round(nextStart)}s`, color: 'yellow' };
+    const win = timeLeft - 1.5;
+    if (win > 1) { const i = mph(win * 0.6); if (i >= MIN_SPEED && i <= MAX_SPEED) return { speed: clamp(i), label: 'CATCH GREEN', detail: `Green ends in ${timeLeft}s`, color: 'green' }; }
+    const ns = timeLeft + plan.yellow + plan.red;
+    return { speed: clamp(mph(ns + plan.green * 0.4)), label: 'NEXT GREEN', detail: `Next green in ${Math.round(ns)}s`, color: 'yellow' };
   }
-
   if (phase === 'yellow') {
-    if (distMeters < 70) {
-      return { speed: null, label: 'STOP', detail: 'Light turning red', color: 'red' };
-    }
-    const nextStart = timeLeft + plan.red;
-    const nextMid   = nextStart + plan.green * 0.4;
-    return { speed: clamp(mph(nextMid)), label: 'SLOW DOWN', detail: `Green in ${Math.round(nextStart)}s`, color: 'yellow' };
+    if (distMeters < 70) return { speed: null, label: 'STOP', detail: 'Light turning red', color: 'red' };
+    const ns = timeLeft + plan.red;
+    return { speed: clamp(mph(ns + plan.green * 0.4)), label: 'SLOW DOWN', detail: `Green in ${Math.round(ns)}s`, color: 'yellow' };
   }
-
-  // red
-  if (nextGreenIn < 3) {
-    return { speed: clamp(mph(plan.green * 0.5)), label: 'GREEN SOON', detail: 'Light changing now', color: 'green' };
-  }
-  const targetTime = nextGreenIn + plan.green * 0.35;
-  return { speed: clamp(mph(targetTime)), label: 'EASE OFF', detail: `Green in ${nextGreenIn}s`, color: 'red' };
+  if (nextGreenIn < 3) return { speed: clamp(mph(plan.green * 0.5)), label: 'GREEN SOON', detail: 'Light changing now', color: 'green' };
+  return { speed: clamp(mph(nextGreenIn + plan.green * 0.35)), label: 'EASE OFF', detail: `Green in ${nextGreenIn}s`, color: 'red' };
 }
 
-// ═══════════════════════════════════════════════════════════
-// DISTANCE + BEARING
-// ═══════════════════════════════════════════════════════════
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371000;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// ── Geo utils ──
+function haversine(la1,lo1,la2,lo2) {
+  const R=6371000,dL=(la2-la1)*Math.PI/180,dO=(lo2-lo1)*Math.PI/180;
+  const a=Math.sin(dL/2)**2+Math.cos(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.sin(dO/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-
-function bearing(lat1, lon1, lat2, lon2) {
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
-  const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180)
-          - Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
-  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
+function bearing(la1,lo1,la2,lo2) {
+  const dO=(lo2-lo1)*Math.PI/180,y=Math.sin(dO)*Math.cos(la2*Math.PI/180);
+  const x=Math.cos(la1*Math.PI/180)*Math.sin(la2*Math.PI/180)-Math.sin(la1*Math.PI/180)*Math.cos(la2*Math.PI/180)*Math.cos(dO);
+  return ((Math.atan2(y,x)*180/Math.PI)+360)%360;
 }
+function angDiff(a,b){const d=Math.abs(a-b)%360;return d>180?360-d:d;}
 
-function angDiff(a, b) {
-  const d = Math.abs(a - b) % 360;
-  return d > 180 ? 360 - d : d;
-}
-
-// ═══════════════════════════════════════════════════════════
-// OSM FETCH
-// ═══════════════════════════════════════════════════════════
-async function fetchLights(lat, lon) {
+// ── OSM fetch ──
+async function fetchLights(lat, lon, radius, cb) {
   setScanBadge(true);
-  const q = `[out:json][timeout:12];node["highway"="traffic_signals"](around:${SEARCH_RADIUS},${lat},${lon});out body;`;
+  const q = `[out:json][timeout:14];node["highway"="traffic_signals"](around:${radius},${lat},${lon});out body;`;
   try {
-    const res = await fetch(OVERPASS_PROXY, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'data=' + encodeURIComponent(q)
-    });
+    const res = await fetch(OVERPASS_PROXY, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'data='+encodeURIComponent(q) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    lights = (data.elements || []).map(el => ({ id: el.id, lat: el.lat, lon: el.lon }));
-    lastQueryPos = { lat, lon };
-    renderLightMarkers();
-  } catch (e) {
-    showError('Signal data unavailable: ' + e.message);
-  } finally {
-    setScanBadge(false);
-  }
+    cb((data.elements||[]).map(el=>({id:el.id,lat:el.lat,lon:el.lon})));
+  } catch(e) { showError('Signal data error: '+e.message); }
+  finally { setScanBadge(false); }
 }
 
-// ═══════════════════════════════════════════════════════════
-// MAP MARKERS
-// ═══════════════════════════════════════════════════════════
-function makeUserMarker() {
-  const el = document.createElement('div');
-  el.innerHTML = `<div class="user-marker-outer"><div class="user-marker-inner"></div></div>`;
-  return L.marker([0,0], {
-    icon: L.divIcon({ html: el.innerHTML, className: '', iconSize: [22,22], iconAnchor: [11,11] }),
-    zIndexOffset: 1000
+// ── Popup builder ──
+function buildPopup(light) {
+  const sig = predictSignal(light.id);
+  const C = {green:'#00e676',yellow:'#ffd740',red:'#ff1744'};
+  const c = C[sig.phase], {plan} = sig, cycle = plan.red + plan.green + plan.yellow;
+  const gP=(plan.green/cycle*100).toFixed(1), yP=(plan.yellow/cycle*100).toFixed(1), rP=(plan.red/cycle*100).toFixed(1);
+  let nG, nY, nR;
+  if (sig.phase==='green')  { nY=sig.timeLeft; nR=sig.timeLeft+plan.yellow; nG=sig.timeLeft+plan.yellow+plan.red; }
+  else if(sig.phase==='yellow'){ nR=sig.timeLeft; nG=sig.timeLeft+plan.red; nY=sig.timeLeft+plan.red+plan.green; }
+  else { nG=sig.timeLeft; nY=sig.timeLeft+plan.green; nR=sig.timeLeft+plan.green+plan.yellow; }
+  return `<div class="light-popup">
+    <div class="popup-phase-row">
+      <div class="popup-bulb" style="background:${c};box-shadow:0 0 12px ${c}"></div>
+      <div><div class="popup-phase-label" style="color:${c}">${sig.phase.toUpperCase()}</div>
+      <div class="popup-timer">Changes in ${sig.timeLeft}s</div></div>
+    </div>
+    <hr class="popup-divider">
+    <div class="popup-row"><span>Next green</span><span style="color:#00e676">${nG}s</span></div>
+    <div class="popup-row"><span>Next yellow</span><span style="color:#ffd740">${nY}s</span></div>
+    <div class="popup-row"><span>Next red</span><span style="color:#ff1744">${nR}s</span></div>
+    <hr class="popup-divider">
+    <div class="popup-row"><span>Cycle length</span><span>${cycle}s</span></div>
+    <div class="popup-row"><span>Green</span><span>${plan.green}s</span></div>
+    <div class="popup-row"><span>Red</span><span>${plan.red}s</span></div>
+    <div class="popup-cycle">
+      <div class="popup-cycle-seg" style="width:${gP}%;background:#00e676"></div>
+      <div class="popup-cycle-seg" style="width:${yP}%;background:#ffd740"></div>
+      <div class="popup-cycle-seg" style="width:${rP}%;background:#ff1744"></div>
+    </div>
+  </div>`;
+}
+
+// ── Marker icons ──
+function userIcon() { return L.divIcon({html:`<div class="user-marker-outer"><div class="user-marker-inner"></div></div>`,className:'',iconSize:[22,22],iconAnchor:[11,11]}); }
+function scoutIcon(){ return L.divIcon({html:`<div class="scout-marker-outer"><div class="scout-marker-inner"></div></div>`,className:'',iconSize:[24,24],iconAnchor:[12,12]}); }
+function lightIcon(phase, isPrimary, isScout) {
+  const C={green:'#00e676',yellow:'#ffd740',red:'#ff1744'}, c=C[phase], sz=isPrimary?18:14;
+  const border=isPrimary?'2.5px solid white':isScout?'2px solid #ff6d00':'2px solid rgba(0,0,0,0.5)';
+  const shadow=isPrimary?`0 0 14px ${c}`:`0 0 6px ${c}`;
+  return L.divIcon({html:`<div style="width:${sz}px;height:${sz}px;border-radius:50%;background:${c};border:${border};box-shadow:${shadow};cursor:pointer"></div>`,className:'',iconSize:[sz,sz],iconAnchor:[sz/2,sz/2]});
+}
+
+function attachPopup(marker, light) {
+  marker.bindPopup(buildPopup(light), {maxWidth:260,className:''});
+  marker.on('popupopen', () => {
+    const iv = setInterval(() => {
+      if (marker.isPopupOpen()) marker.setPopupContent(buildPopup(light));
+      else clearInterval(iv);
+    }, 1000);
   });
 }
 
-function renderLightMarkers() {
-  // clear old
+// ── Render markers ──
+function renderMainLights(primaryId) {
   Object.values(lightMarkers).forEach(m => map.removeLayer(m));
   lightMarkers = {};
-
   lights.forEach(l => {
-    const sig = predictSignal(l.id);
-    const colors = { green: '#00e676', yellow: '#ffd740', red: '#ff1744' };
-    const c = colors[sig.phase];
-    const el = document.createElement('div');
-    el.className = 'light-marker';
-    el.style.background = c;
-    el.style.boxShadow = `0 0 8px ${c}`;
-
-    const marker = L.marker([l.lat, l.lon], {
-      icon: L.divIcon({ html: el.outerHTML, className: '', iconSize: [14,14], iconAnchor: [7,7] })
-    }).addTo(map);
-
-    marker.bindPopup(`<b style="font-family:monospace;font-size:12px">${sig.phase.toUpperCase()} · ${sig.timeLeft}s</b>`);
-    lightMarkers[l.id] = marker;
+    const sig = predictSignal(l.id), isPrimary = l.id === primaryId;
+    const m = L.marker([l.lat, l.lon], {icon: lightIcon(sig.phase, isPrimary, false)}).addTo(map);
+    attachPopup(m, l);
+    lightMarkers[l.id] = m;
   });
 }
 
-function highlightPrimaryMarker(primaryId) {
-  // Reset all to normal size then highlight primary
-  lights.forEach(l => {
-    const m = lightMarkers[l.id];
-    if (!m) return;
+function renderScoutLights() {
+  Object.values(scoutLightMarkers).forEach(m => map.removeLayer(m));
+  scoutLightMarkers = {};
+  scoutLights.forEach(l => {
     const sig = predictSignal(l.id);
-    const colors = { green: '#00e676', yellow: '#ffd740', red: '#ff1744' };
-    const c = colors[sig.phase];
-    const isPrimary = l.id === primaryId;
-    const size = isPrimary ? 18 : 14;
-    const el = document.createElement('div');
-    el.className = 'light-marker' + (isPrimary ? ' primary' : '');
-    el.style.background = c;
-    el.style.color = c;
-    el.style.boxShadow = isPrimary ? `0 0 14px ${c}` : `0 0 6px ${c}`;
-    m.setIcon(L.divIcon({ html: el.outerHTML, className: '', iconSize: [size,size], iconAnchor: [size/2,size/2] }));
+    const m = L.marker([l.lat, l.lon], {icon: lightIcon(sig.phase, false, true)}).addTo(map);
+    attachPopup(m, l);
+    scoutLightMarkers[l.id] = m;
   });
 }
 
-// ═══════════════════════════════════════════════════════════
-// MAIN UPDATE LOOP
-// ═══════════════════════════════════════════════════════════
+// ── Main tick ──
 function tick() {
   if (!userPos || !watching) return;
-
-  const { lat, lon } = userPos;
-
-  // Re-query OSM if moved far enough
+  const {lat, lon} = userPos;
   if (!lastQueryPos || haversine(lastQueryPos.lat, lastQueryPos.lon, lat, lon) > REQUERY_DIST) {
-    fetchLights(lat, lon);
+    lastQueryPos = {lat, lon};
+    fetchLights(lat, lon, SEARCH_RADIUS, result => { lights = result; updateAdvisory(); });
+  } else {
+    updateAdvisory();
   }
+}
+
+function updateAdvisory() {
+  if (!userPos) return;
+  const {lat, lon} = userPos;
+  const spd = Math.round(userSpeedMph);
+  document.getElementById('speedVal').textContent = spd;
+  document.getElementById('speedBadge').classList.toggle('moving', spd > 3);
 
   if (!lights.length) {
     document.getElementById('advisoryCard').style.display = 'none';
     document.getElementById('signalList').style.display = 'none';
-    if (lastQueryPos) {
-      showNoSignal('No traffic signals found within ' + SEARCH_RADIUS + 'm.');
-    }
+    if (lastQueryPos) showNoSignal('No signals found within ' + SEARCH_RADIUS + 'm.');
     return;
   }
-
   hideNoSignal();
 
-  // Sort lights by distance, prefer ones roughly ahead
   const enriched = lights.map(l => ({
     ...l,
     dist: haversine(lat, lon, l.lat, l.lon),
     bear: bearing(lat, lon, l.lat, l.lon),
-    sig:  predictSignal(l.id)
+    sig: predictSignal(l.id)
   })).filter(l => l.dist > 8 && l.dist < SEARCH_RADIUS).sort((a, b) => {
     if (userHeading !== null) {
-      const da = angDiff(userHeading, a.bear);
-      const db = angDiff(userHeading, b.bear);
-      if (da < 60 && db >= 60) return -1;
-      if (db < 60 && da >= 60) return 1;
+      const ah = x => angDiff(userHeading, x) < 60;
+      if (ah(a.bear) && !ah(b.bear)) return -1;
+      if (!ah(a.bear) && ah(b.bear)) return 1;
     }
     return a.dist - b.dist;
   });
@@ -774,200 +434,166 @@ function tick() {
   }
 
   const primary = enriched[0];
-  highlightPrimaryMarker(primary.id);
-
-  // Advisory card
-  const glosa = calcGLOSA(primary.dist, primary.sig);
-  updateAdvisoryCard(glosa, primary);
-
-  // Signal list
-  updateSignalList(enriched.slice(0, 6));
-
-  // Refresh markers colors
-  renderLightMarkers();
-  highlightPrimaryMarker(primary.id);
+  renderMainLights(primary.id);
+  updateAdvisoryCard(calcGLOSA(primary.dist, primary.sig), primary);
+  updateSignalList(enriched.slice(0, 8));
 }
 
-// ═══════════════════════════════════════════════════════════
-// UI UPDATES
-// ═══════════════════════════════════════════════════════════
+// ── UI updates ──
 function updateAdvisoryCard(glosa, light) {
   const card = document.getElementById('advisoryCard');
-  card.style.display = 'block';
-  card.className = glosa.color;
-
-  document.getElementById('advSpeed').textContent = glosa.speed !== null ? glosa.speed : '--';
-  document.getElementById('advLabel').textContent  = glosa.label;
-  document.getElementById('advCountdown').textContent = glosa.detail;
-  document.getElementById('advDistance').textContent = `${Math.round(light.dist)}m ahead · ${light.sig.phase} for ${light.sig.timeLeft}s`;
-
-  // traffic light bulbs
-  document.getElementById('bulbR').className = 'tl-bulb r' + (light.sig.phase === 'red'    ? ' lit' : '');
-  document.getElementById('bulbY').className = 'tl-bulb y' + (light.sig.phase === 'yellow' ? ' lit' : '');
-  document.getElementById('bulbG').className = 'tl-bulb g' + (light.sig.phase === 'green'  ? ' lit' : '');
+  card.style.display = 'block'; card.className = glosa.color;
+  document.getElementById('advSpeed').textContent    = glosa.speed !== null ? glosa.speed : '--';
+  document.getElementById('advLabel').textContent    = glosa.label;
+  document.getElementById('advCountdown').textContent= glosa.detail;
+  document.getElementById('advDistance').textContent = `${Math.round(light.dist)}m · ${light.sig.phase} for ${light.sig.timeLeft}s`;
+  document.getElementById('bulbR').className = 'tl-bulb r' + (light.sig.phase==='red'    ? ' lit' : '');
+  document.getElementById('bulbY').className = 'tl-bulb y' + (light.sig.phase==='yellow' ? ' lit' : '');
+  document.getElementById('bulbG').className = 'tl-bulb g' + (light.sig.phase==='green'  ? ' lit' : '');
 }
 
 function updateSignalList(list) {
-  const panel = document.getElementById('signalList');
-  const items = document.getElementById('signalItems');
-  const count = document.getElementById('signalCount');
-
-  panel.style.display = 'block';
-  count.textContent = list.length;
-
-  const colors = { green: '#00e676', yellow: '#ffd740', red: '#ff1744' };
-
-  items.innerHTML = list.map((l, i) => `
-    <div class="signal-chip${i === 0 ? ' primary' : ''}">
-      <div class="signal-chip-dot" style="background:${colors[l.sig.phase]};box-shadow:0 0 8px ${colors[l.sig.phase]}"></div>
-      <div class="signal-chip-dist">${l.dist < 1000 ? Math.round(l.dist)+'m' : (l.dist/1000).toFixed(1)+'km'}</div>
-      <div class="signal-chip-phase" style="color:${colors[l.sig.phase]}">${l.sig.phase.toUpperCase()}</div>
+  document.getElementById('signalList').style.display = 'block';
+  document.getElementById('signalCount').textContent = list.length;
+  const C = {green:'#00e676',yellow:'#ffd740',red:'#ff1744'};
+  document.getElementById('signalItems').innerHTML = list.map((l,i) => `
+    <div class="signal-chip${i===0?' primary':''}">
+      <div class="signal-chip-dot" style="background:${C[l.sig.phase]};box-shadow:0 0 8px ${C[l.sig.phase]}40"></div>
+      <div class="signal-chip-dist">${l.dist<1000?Math.round(l.dist)+'m':(l.dist/1000).toFixed(1)+'km'}</div>
+      <div class="signal-chip-phase" style="color:${C[l.sig.phase]}">${l.sig.phase.toUpperCase()}</div>
       <div class="signal-chip-timer">${l.sig.timeLeft}s</div>
-    </div>
-  `).join('');
+    </div>`).join('');
 }
 
-// ═══════════════════════════════════════════════════════════
-// GPS
-// ═══════════════════════════════════════════════════════════
+// ── GPS ──
 function onPosition(pos) {
-  const { latitude: lat, longitude: lon, accuracy, speed } = pos.coords;
-
-  // Compute speed from GPS or estimate from position delta
-  if (speed != null && speed >= 0) {
-    userSpeedMph = speed * 2.237;
-  } else if (prevGpsPos) {
-    const d  = haversine(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
-    const dt = (Date.now() - prevGpsPos.t) / 1000;
-    if (dt > 0.5 && dt < 8) userSpeedMph = (d / dt) * 2.237;
+  const {latitude:lat, longitude:lon, accuracy, speed} = pos.coords;
+  if (speed != null && speed >= 0) userSpeedMph = speed * 2.237;
+  else if (prevGpsPos) {
+    const d=haversine(prevGpsPos.lat,prevGpsPos.lon,lat,lon), dt=(Date.now()-prevGpsPos.t)/1000;
+    if (dt>0.5&&dt<8) userSpeedMph=(d/dt)*2.237;
   }
+  if (prevGpsPos && haversine(prevGpsPos.lat,prevGpsPos.lon,lat,lon)>5)
+    userHeading = bearing(prevGpsPos.lat,prevGpsPos.lon,lat,lon);
+  prevGpsPos = {lat, lon, t: Date.now()};
 
-  // Compute heading from movement
-  if (prevGpsPos && haversine(prevGpsPos.lat, prevGpsPos.lon, lat, lon) > 5) {
-    userHeading = bearing(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
-  }
-
-  prevGpsPos = { lat, lon, t: Date.now() };
-  userPos    = { lat, lon };
-
-  setGpsPill('active', `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
-
-  // Update user marker
-  if (!userMarker) {
-    userMarker = makeUserMarker().addTo(map);
-    map.setView([lat, lon], 16);
-  } else {
-    userMarker.setLatLng([lat, lon]);
-  }
-
-  if (!accuracyCircle) {
-    accuracyCircle = L.circle([lat, lon], {
-      radius: accuracy,
-      color: '#2979ff',
-      fillColor: '#2979ff',
-      fillOpacity: 0.06,
-      weight: 1,
-      opacity: 0.3
-    }).addTo(map);
-  } else {
-    accuracyCircle.setLatLng([lat, lon]).setRadius(accuracy);
+  if (!operatorMode) {
+    userPos = {lat, lon};
+    setGpsPill('active', `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+    if (!userMarker) { userMarker = L.marker([lat,lon],{icon:userIcon(),zIndexOffset:1000}).addTo(map); map.setView([lat,lon],16); }
+    else userMarker.setLatLng([lat,lon]);
+    if (!accuracyCircle) accuracyCircle = L.circle([lat,lon],{radius:accuracy,color:'#2979ff',fillColor:'#2979ff',fillOpacity:0.06,weight:1,opacity:0.3}).addTo(map);
+    else accuracyCircle.setLatLng([lat,lon]).setRadius(accuracy);
   }
 }
+function onGpsError(err) { setGpsPill('error','GPS ERROR'); showError('Location error: '+err.message); }
 
-function onGpsError(err) {
-  setGpsPill('error', 'GPS ERROR');
-  showError('Location error: ' + err.message);
+// ── Operator mode ──
+function toggleOperator() {
+  operatorMode = !operatorMode;
+  document.getElementById('operatorBtn').classList.toggle('active', operatorMode);
+  document.getElementById('operatorBanner').style.display = operatorMode ? 'block' : 'none';
+  document.getElementById('map').classList.toggle('operator-mode', operatorMode);
+  setGpsPill(operatorMode ? 'operator' : 'active', operatorMode ? 'OPERATOR' : 'GPS LIVE');
+  // Turn off scout if operator turns on
+  if (operatorMode && scoutMode) toggleScout();
 }
 
-// ═══════════════════════════════════════════════════════════
-// START / STOP
-// ═══════════════════════════════════════════════════════════
-function handleMainBtn() {
-  if (!watching) startTracking(); else stopTracking();
+// ── Scout mode ──
+function toggleScout() {
+  scoutMode = !scoutMode;
+  document.getElementById('scoutBtn').classList.toggle('active', scoutMode);
+  if (!scoutMode) clearScout();
+  if (scoutMode && operatorMode) toggleOperator();
 }
+
+function dropScoutPin(lat, lon) {
+  clearScout();
+  scoutPos = {lat, lon};
+  scoutMarker = L.marker([lat,lon],{icon:scoutIcon(),zIndexOffset:900}).addTo(map);
+  scoutMarker.bindPopup('<div style="font-family:monospace;font-size:11px;padding:8px 12px;color:#ff6d00">Scanning for signals...</div>').openPopup();
+  scoutCircle = L.circle([lat,lon],{radius:SCOUT_RADIUS,color:'#ff6d00',fillColor:'#ff6d00',fillOpacity:0.06,weight:1,opacity:0.4}).addTo(map);
+  fetchLights(lat, lon, SCOUT_RADIUS, result => {
+    scoutLights = result;
+    renderScoutLights();
+    scoutMarker.setPopupContent(`<div style="font-family:monospace;font-size:11px;padding:8px 12px;color:#ff6d00">Scout: ${result.length} signal${result.length!==1?'s':''} found<br><span style="color:#4a5a6a;font-size:10px">Tap any light for details</span></div>`);
+  });
+}
+
+function clearScout() {
+  if (scoutMarker)  { map.removeLayer(scoutMarker);  scoutMarker = null; }
+  if (scoutCircle)  { map.removeLayer(scoutCircle);  scoutCircle = null; }
+  Object.values(scoutLightMarkers).forEach(m => map.removeLayer(m));
+  scoutLightMarkers = {}; scoutLights = []; scoutPos = null;
+}
+
+// ── Start / stop ──
+function handleMainBtn() { if (!watching) startTracking(); else stopTracking(); }
 
 function startTracking() {
-  if (!navigator.geolocation) {
-    showError('Geolocation not supported by this browser.');
-    return;
-  }
-
+  if (!navigator.geolocation) { showError('Geolocation not supported.'); return; }
   watching = true;
   document.getElementById('mainBtn').textContent = 'STOP';
   document.getElementById('mainBtn').classList.add('stop');
-  document.getElementById('recenterBtn').style.display = 'block';
-  setGpsPill('acquiring', 'ACQUIRING');
-
-  watchId = navigator.geolocation.watchPosition(onPosition, onGpsError, {
-    enableHighAccuracy: true,
-    maximumAge: 2000,
-    timeout: 12000
-  });
-
+  ['recenterBtn','operatorBtn','scoutBtn'].forEach(id => document.getElementById(id).classList.add('visible'));
+  setGpsPill('acquiring','ACQUIRING');
+  watchId   = navigator.geolocation.watchPosition(onPosition, onGpsError, {enableHighAccuracy:true,maximumAge:2000,timeout:12000});
   tickTimer = setInterval(tick, UPDATE_MS);
 }
 
 function stopTracking() {
-  watching = false;
-  if (watchId)    navigator.geolocation.clearWatch(watchId);
-  if (tickTimer)  clearInterval(tickTimer);
-
+  watching = false; operatorMode = false; scoutMode = false;
+  if (watchId)   navigator.geolocation.clearWatch(watchId);
+  if (tickTimer) clearInterval(tickTimer);
   document.getElementById('mainBtn').textContent = 'START';
   document.getElementById('mainBtn').classList.remove('stop');
-  document.getElementById('recenterBtn').style.display = 'none';
+  ['recenterBtn','operatorBtn','scoutBtn'].forEach(id => { const b=document.getElementById(id); b.classList.remove('visible','active'); });
+  document.getElementById('operatorBanner').style.display = 'none';
+  document.getElementById('map').classList.remove('operator-mode');
   document.getElementById('advisoryCard').style.display = 'none';
   document.getElementById('signalList').style.display = 'none';
-  hideNoSignal();
-  setGpsPill('', 'STANDBY');
-
+  hideNoSignal(); setGpsPill('','STANDBY');
+  document.getElementById('speedVal').textContent = '0';
+  document.getElementById('speedBadge').classList.remove('moving');
   if (userMarker)     { map.removeLayer(userMarker);     userMarker = null; }
   if (accuracyCircle) { map.removeLayer(accuracyCircle); accuracyCircle = null; }
-  Object.values(lightMarkers).forEach(m => map.removeLayer(m));
-  lightMarkers = {};
-  lights = [];
-  lastQueryPos = null;
-  userPos = null;
-  prevGpsPos = null;
+  Object.values(lightMarkers).forEach(m => map.removeLayer(m)); lightMarkers = {};
+  lights = []; lastQueryPos = null; userPos = null; prevGpsPos = null; userSpeedMph = 0;
+  clearScout();
 }
 
-function recenter() {
-  if (userPos) map.setView([userPos.lat, userPos.lon], 16);
+function recenter() { if (userPos) map.setView([userPos.lat, userPos.lon], 16); }
+
+// ── Helpers ──
+function setGpsPill(state, label) { document.getElementById('gpsPill').className='gps-pill'+(state?' '+state:''); document.getElementById('gpsLabel').textContent=label; }
+function setScanBadge(on) { document.getElementById('scanBadge').classList.toggle('visible',on); }
+function showError(msg) { const t=document.getElementById('errToast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>{t.style.display='none';},5000); }
+function showNoSignal(msg) { const e=document.getElementById('noSignalMsg'); e.textContent=msg; e.style.display='block'; }
+function hideNoSignal() { document.getElementById('noSignalMsg').style.display='none'; }
+
+// ── Map init ──
+function initMap() {
+  map = L.map('map', {zoomControl:false, attributionControl:true, center:[39.8,-98.5], zoom:5});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {attribution:'© OpenStreetMap contributors', maxZoom:19}).addTo(map);
+
+  map.on('click', e => {
+    if (!watching) return;
+    const {lat, lng:lon} = e.latlng;
+
+    if (scoutMode) { dropScoutPin(lat, lon); return; }
+
+    if (operatorMode) {
+      userPos = {lat, lon};
+      if (!userMarker) userMarker = L.marker([lat,lon],{icon:userIcon(),zIndexOffset:1000}).addTo(map);
+      else userMarker.setLatLng([lat, lon]);
+      if (accuracyCircle) { map.removeLayer(accuracyCircle); accuracyCircle = null; }
+      lastQueryPos = null; lights = [];
+      setGpsPill('operator', `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+      tick();
+    }
+  });
 }
 
-// ═══════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════
-function setGpsPill(state, label) {
-  const pill = document.getElementById('gpsPill');
-  pill.className = 'gps-pill' + (state ? ' ' + state : '');
-  document.getElementById('gpsLabel').textContent = label;
-}
-
-function setScanBadge(on) {
-  document.getElementById('scanBadge').classList.toggle('visible', on);
-}
-
-function showError(msg) {
-  const t = document.getElementById('errToast');
-  t.textContent = msg;
-  t.style.display = 'block';
-  clearTimeout(t._hide);
-  t._hide = setTimeout(() => { t.style.display = 'none'; }, 5000);
-}
-
-function showNoSignal(msg) {
-  const el = document.getElementById('noSignalMsg');
-  el.textContent = msg;
-  el.style.display = 'block';
-}
-
-function hideNoSignal() {
-  document.getElementById('noSignalMsg').style.display = 'none';
-}
-
-// ═══════════════════════════════════════════════════════════
-// BOOT
-// ═══════════════════════════════════════════════════════════
 initMap();
 </script>
 </body>

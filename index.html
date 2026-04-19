@@ -6,6 +6,7 @@
 <title>GLOSA — Green Light Advisor</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -125,6 +126,39 @@
   .advisory-countdown { font-size: 13px; font-family: 'DM Mono', monospace; color: var(--muted); margin-top: 2px; }
   .advisory-distance { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 3px; }
 
+  /* Report bar — shown when near a primary light */
+  #reportBar {
+    display: none; align-items: center; gap: 6px;
+    background: rgba(13,19,24,0.94); border: 1px solid var(--border);
+    border-radius: 12px; padding: 10px 12px; backdrop-filter: blur(10px);
+  }
+  #reportBar.visible { display: flex; }
+  .report-label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0; }
+  .report-btn {
+    flex: 1; border: none; border-radius: 8px; padding: 10px 6px;
+    font-family: 'Barlow Condensed', sans-serif; font-size: 15px; font-weight: 700;
+    letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s; display: flex; align-items: center; justify-content: center; gap: 5px;
+  }
+  .report-btn:active { transform: scale(0.95); opacity: 0.8; }
+  .report-btn.rg { background: rgba(0,230,118,0.12); border: 1px solid var(--green); color: var(--green); }
+  .report-btn.ry { background: rgba(255,215,64,0.12); border: 1px solid var(--yellow); color: var(--yellow); }
+  .report-btn.rr { background: rgba(255,23,68,0.12); border: 1px solid var(--red); color: var(--red); }
+  .report-flash {
+    position: fixed; inset: 0; z-index: 100; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .report-flash.show { opacity: 1; }
+
+  /* Data quality badge on advisory card */
+  #dataQualityBadge {
+    position: absolute; top: 10px; right: 14px;
+    font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px;
+    padding: 2px 7px; border-radius: 10px; text-transform: uppercase;
+  }
+  #dataQualityBadge.crowdsourced { background: rgba(0,230,118,0.1); color: var(--green); border: 1px solid rgba(0,230,118,0.25); }
+  #dataQualityBadge.estimated    { background: rgba(74,90,106,0.2); color: var(--muted); border: 1px solid var(--border); }
+
   /* Signal list */
   #signalList { background: rgba(13,19,24,0.94); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; display: none; backdrop-filter: blur(10px); }
   .signal-list-header { padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 2px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; }
@@ -148,7 +182,7 @@
   .btn-icon.visible { display: flex; }
 
   /* Popup */
-  .light-popup { padding: 14px 16px; min-width: 210px; font-family: 'Barlow Condensed', sans-serif; }
+  .light-popup { padding: 14px 16px; min-width: 220px; font-family: 'Barlow Condensed', sans-serif; }
   .popup-phase-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .popup-bulb { width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0; }
   .popup-phase-label { font-size: 22px; font-weight: 800; letter-spacing: 1px; }
@@ -158,10 +192,14 @@
   .popup-row span:last-child { color: var(--text); }
   .popup-cycle { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 10px; gap: 1px; }
   .popup-cycle-seg { height: 100%; }
+  .popup-source { font-family: 'DM Mono', monospace; font-size: 9px; margin-top: 8px; text-align: right; }
+  .popup-source.crowdsourced { color: var(--green); }
+  .popup-source.estimated { color: var(--muted); }
 
   /* No signal */
   #noSignalMsg { background: rgba(13,19,24,0.94); border: 1px solid var(--border); border-radius: 14px; padding: 16px; text-align: center; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); display: none; line-height: 1.7; backdrop-filter: blur(10px); }
   #errToast { position: fixed; top: 70px; left: 16px; right: 16px; z-index: 30; background: rgba(255,23,68,0.12); border: 1px solid rgba(255,23,68,0.35); border-radius: 10px; padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 11px; color: #ff6b8a; line-height: 1.5; display: none; }
+  #successToast { position: fixed; top: 70px; left: 16px; right: 16px; z-index: 30; background: rgba(0,230,118,0.1); border: 1px solid rgba(0,230,118,0.3); border-radius: 10px; padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 11px; color: var(--green); line-height: 1.5; display: none; text-align: center; }
 
   /* User / scout markers */
   .user-marker-outer { width: 22px; height: 22px; border-radius: 50%; background: rgba(41,121,255,0.25); border: 2px solid var(--blue); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 4px rgba(41,121,255,0.12); animation: locpulse 2s ease-in-out infinite; }
@@ -169,9 +207,12 @@
   @keyframes locpulse { 0%,100%{ box-shadow: 0 0 0 4px rgba(41,121,255,0.12); } 50%{ box-shadow: 0 0 0 10px rgba(41,121,255,0.04); } }
   .scout-marker-outer { width: 24px; height: 24px; border-radius: 50%; background: rgba(255,109,0,0.2); border: 2px solid var(--orange); display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 4px rgba(255,109,0,0.1); }
   .scout-marker-inner { width: 10px; height: 10px; border-radius: 50%; background: var(--orange); }
+
+
 </style>
 </head>
 <body>
+
 
 <div id="map"></div>
 
@@ -184,9 +225,12 @@
 <div id="operatorBanner">⚠ OPERATOR MODE — TAP MAP TO MOVE YOUR POSITION</div>
 <div id="scanBadge"><div class="scan-spinner"></div><span>SCANNING</span></div>
 <div id="errToast"></div>
+<div id="successToast"></div>
+<div class="report-flash" id="reportFlash"></div>
 
 <div id="bottomPanel">
   <div id="advisoryCard">
+    <div id="dataQualityBadge" class="estimated">ESTIMATED</div>
     <div class="advisory-inner">
       <div class="tl-widget">
         <div class="tl-bulb r" id="bulbR"></div>
@@ -203,6 +247,14 @@
         <div class="advisory-distance" id="advDistance"></div>
       </div>
     </div>
+  </div>
+
+  <!-- Report bar: user taps when light changes -->
+  <div id="reportBar">
+    <div class="report-label">Light just changed →</div>
+    <button class="report-btn rg" onclick="reportPhase('green')">🟢 GREEN</button>
+    <button class="report-btn ry" onclick="reportPhase('yellow')">🟡 YELLOW</button>
+    <button class="report-btn rr" onclick="reportPhase('red')">🔴 RED</button>
   </div>
 
   <div id="signalList">
@@ -223,31 +275,171 @@
 </div>
 
 <script>
-const OVERPASS_PROXY = 'https://overpass.private.coffee/api/interpreter';
-const SEARCH_RADIUS  = 800;
-const SCOUT_RADIUS   = 300;
-const REQUERY_DIST   = 250;
-const UPDATE_MS      = 1000;
-const MAX_SPEED      = 65;
-const MIN_SPEED      = 5;
+// ── Supabase ──
+const SUPABASE_URL = 'https://jqxdetrfhvvdcdgawxao.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpxeGRldHJmaHZ2ZGNkZ2F3eGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY2MjE5MDEsImV4cCI6MjA5MjE5NzkwMX0.8AS9cYt85Z0rH_TPLeJ4x7u4SD_pQmij6CFAERYAbTY';
 
-let map, userMarker, accuracyCircle, scoutMarker, scoutCircle;
-let lightMarkers = {}, scoutLightMarkers = {};
-let watching = false, operatorMode = false, scoutMode = false;
-let watchId = null, tickTimer = null;
-let userPos = null, lastQueryPos = null, scoutPos = null;
-let lights = [], scoutLights = [];
-let userHeading = null, userSpeedMph = 0, prevGpsPos = null;
+let supabase = null;
+let dbEnabled = false;
 
-// ── Signal prediction ──
+// In-memory cache of crowdsourced timing per light id
+const timingCache = {};
+
+(function() {
+  try {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    dbEnabled = true;
+    console.log('Supabase connected');
+  } catch(e) {
+    console.warn('Supabase init failed', e);
+  }
+})();
+
+// ── Report a phase change to Supabase ──
+let primaryLight = null; // the light we're currently tracking
+
+async function reportPhase(phase) {
+  if (!primaryLight) return;
+
+  // Flash screen with phase color
+  const flashEl = document.getElementById('reportFlash');
+  const colors = { green: 'rgba(0,230,118,0.18)', yellow: 'rgba(255,215,64,0.18)', red: 'rgba(255,23,68,0.18)' };
+  flashEl.style.background = colors[phase];
+  flashEl.classList.add('show');
+  setTimeout(() => flashEl.classList.remove('show'), 300);
+
+  const report = {
+    light_id: primaryLight.id,
+    phase,
+    reported_at: new Date().toISOString(),
+    lat: primaryLight.lat,
+    lon: primaryLight.lon
+  };
+
+  if (dbEnabled && supabase) {
+    try {
+      const { error } = await supabase.from('signal_reports').insert([report]);
+      if (error) throw error;
+      showSuccess(`✓ ${phase.toUpperCase()} reported — helping calibrate this light`);
+    } catch(e) {
+      showError('Report failed: ' + e.message);
+      return;
+    }
+  } else {
+    // Store locally as fallback
+    const local = JSON.parse(localStorage.getItem('glosa_local_reports') || '[]');
+    local.push(report);
+    if (local.length > 500) local.splice(0, local.length - 500);
+    localStorage.setItem('glosa_local_reports', JSON.stringify(local));
+    showSuccess(`✓ ${phase.toUpperCase()} saved locally (DB unavailable)`);
+  }
+
+  // Invalidate cache for this light so next prediction re-fetches
+  delete timingCache[primaryLight.id];
+}
+
+// ── Fetch and compute crowdsourced timing for a light ──
+async function getCrowdsourcedTiming(lightId) {
+  // Return cache if fresh (< 5 min old)
+  const cached = timingCache[lightId];
+  if (cached && (Date.now() - cached.computedAt) < 300000) return cached;
+
+  if (!dbEnabled || !supabase) {
+    // Try local storage
+    return computeTimingFromReports(lightId, getLocalReports(lightId));
+  }
+
+  try {
+    // Get last 200 reports for this light
+    const { data, error } = await supabase
+      .from('signal_reports')
+      .select('phase, reported_at')
+      .eq('light_id', lightId)
+      .order('reported_at', { ascending: false })
+      .limit(200);
+
+    if (error) throw error;
+    return computeTimingFromReports(lightId, data || []);
+  } catch(e) {
+    console.warn('DB fetch failed', e);
+    return null;
+  }
+}
+
+function getLocalReports(lightId) {
+  const all = JSON.parse(localStorage.getItem('glosa_local_reports') || '[]');
+  return all.filter(r => r.light_id === lightId).map(r => ({ phase: r.phase, reported_at: r.reported_at }));
+}
+
+function computeTimingFromReports(lightId, reports) {
+  if (!reports || reports.length < 4) {
+    timingCache[lightId] = null;
+    return null; // not enough data
+  }
+
+  // Sort ascending
+  const sorted = [...reports].sort((a, b) => new Date(a.reported_at) - new Date(b.reported_at));
+
+  // Find transitions between phases and compute intervals
+  // e.g. green→red transition gives us cycle segment lengths
+  const intervals = { green: [], yellow: [], red: [] };
+
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1], curr = sorted[i];
+    const dt = (new Date(curr.reported_at) - new Date(prev.reported_at)) / 1000;
+    // Only count intervals that look plausible (5s–180s)
+    if (dt >= 5 && dt <= 180 && prev.phase !== curr.phase) {
+      intervals[prev.phase].push(dt);
+    }
+  }
+
+  const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+  const greenAvg  = avg(intervals.green)  || null;
+  const yellowAvg = avg(intervals.yellow) || null;
+  const redAvg    = avg(intervals.red)    || null;
+
+  // Need at least two phase types to build a real plan
+  const known = [greenAvg, redAvg].filter(Boolean);
+  if (known.length < 2) {
+    timingCache[lightId] = null;
+    return null;
+  }
+
+  const plan = {
+    green:  Math.round(greenAvg  || 38),
+    yellow: Math.round(yellowAvg || 4),
+    red:    Math.round(redAvg    || 52)
+  };
+
+  // Find the most recently reported phase to anchor the clock
+  const lastReport = sorted[sorted.length - 1];
+  const lastPhase  = lastReport.phase;
+  const lastTime   = new Date(lastReport.reported_at).getTime() / 1000;
+
+  const result = {
+    plan,
+    lastPhase,
+    lastTime,
+    reports: reports.length,
+    computedAt: Date.now()
+  };
+
+  timingCache[lightId] = result;
+  return result;
+}
+
+// ── Signal prediction — uses crowdsourced data if available, else estimated ──
 function getTimingPlan(hour) {
   if (hour >= 7  && hour < 9)  return { red: 58, green: 42, yellow: 4 };
   if (hour >= 16 && hour < 19) return { red: 68, green: 48, yellow: 4 };
   if (hour >= 22 || hour < 6)  return { red: 38, green: 28, yellow: 3 };
   return                              { red: 52, green: 38, yellow: 4 };
 }
+
 function hashId(id) { return Number(BigInt(id) * 2654435761n & 0xFFFFFFFFn); }
-function predictSignal(lightId) {
+
+function predictSignalEstimated(lightId) {
   const now = Date.now() / 1000, hour = new Date().getHours();
   const plan = getTimingPlan(hour), cycle = plan.red + plan.green + plan.yellow;
   const seed = (hashId(lightId) % Math.round(cycle * 100)) / 100;
@@ -260,10 +452,74 @@ function predictSignal(lightId) {
   } else {
     phase = 'red'; timeLeft = cycle - t; nextGreenIn = timeLeft;
   }
-  return { phase, timeLeft: Math.round(timeLeft), nextGreenIn: Math.round(nextGreenIn), plan, cycle };
+  return { phase, timeLeft: Math.round(timeLeft), nextGreenIn: Math.round(nextGreenIn), plan, cycle, source: 'estimated' };
+}
+
+function predictSignalFromCrowdsourced(cs) {
+  const now = Date.now() / 1000;
+  const { plan, lastPhase, lastTime } = cs;
+  const cycle = plan.green + plan.yellow + plan.red;
+
+  // How many seconds elapsed since last report
+  const elapsed = now - lastTime;
+
+  // Build a phase timeline starting from lastPhase at lastTime
+  // Order: green → yellow → red → green → ...
+  const order = ['green', 'yellow', 'red'];
+  const durations = { green: plan.green, yellow: plan.yellow, red: plan.red };
+
+  // Find position in cycle from last known phase
+  let startIdx = order.indexOf(lastPhase);
+  let remaining = elapsed;
+
+  // Walk through phases to find current phase
+  let phase = lastPhase;
+  let timeInPhase = 0;
+  for (let loops = 0; loops < 20; loops++) {
+    const idx = order.indexOf(phase);
+    const dur = durations[phase];
+    const alreadySpent = loops === 0 ? 0 : 0; // first iteration starts from lastPhase
+    if (remaining < dur) {
+      timeInPhase = remaining;
+      break;
+    }
+    remaining -= dur;
+    phase = order[(idx + 1) % 3];
+  }
+
+  const timeLeft = durations[phase] - timeInPhase;
+  const phaseIdx = order.indexOf(phase);
+  const nextGreenIn = phase === 'green' ? 0
+    : phase === 'yellow' ? timeLeft + plan.red
+    : timeLeft; // red → green
+
+  return {
+    phase,
+    timeLeft: Math.max(1, Math.round(timeLeft)),
+    nextGreenIn: Math.round(nextGreenIn),
+    plan,
+    cycle,
+    source: 'crowdsourced',
+    reportCount: cs.reports
+  };
+}
+
+// Main predict function — async, tries crowdsourced first
+async function predictSignal(lightId) {
+  const cs = await getCrowdsourcedTiming(lightId);
+  if (cs) return predictSignalFromCrowdsourced(cs);
+  return predictSignalEstimated(lightId);
+}
+
+// Sync version for markers (uses cache only, falls back to estimated)
+function predictSignalSync(lightId) {
+  const cs = timingCache[lightId];
+  if (cs) return predictSignalFromCrowdsourced(cs);
+  return predictSignalEstimated(lightId);
 }
 
 // ── GLOSA calc ──
+const MAX_SPEED = 65, MIN_SPEED = 5;
 function calcGLOSA(distMeters, sig) {
   if (distMeters < 8) return { speed: null, label: 'AT LIGHT', detail: '', color: 'red' };
   const distMiles = distMeters / 1609.34;
@@ -299,6 +555,20 @@ function bearing(la1,lo1,la2,lo2) {
 function angDiff(a,b){const d=Math.abs(a-b)%360;return d>180?360-d:d;}
 
 // ── OSM fetch ──
+const OVERPASS_PROXY = 'https://overpass.private.coffee/api/interpreter';
+const SEARCH_RADIUS  = 800;
+const SCOUT_RADIUS   = 300;
+const REQUERY_DIST   = 250;
+const UPDATE_MS      = 1000;
+
+let map, userMarker, accuracyCircle, scoutMarker, scoutCircle;
+let lightMarkers = {}, scoutLightMarkers = {};
+let watching = false, operatorMode = false, scoutMode = false;
+let watchId = null, tickTimer = null;
+let userPos = null, lastQueryPos = null, scoutPos = null;
+let lights = [], scoutLights = [];
+let userHeading = null, userSpeedMph = 0, prevGpsPos = null;
+
 async function fetchLights(lat, lon, radius, cb) {
   setScanBadge(true);
   const q = `[out:json][timeout:14];node["highway"="traffic_signals"](around:${radius},${lat},${lon});out body;`;
@@ -307,13 +577,17 @@ async function fetchLights(lat, lon, radius, cb) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     cb((data.elements||[]).map(el=>({id:el.id,lat:el.lat,lon:el.lon})));
-  } catch(e) { showError('Signal data error: '+e.message); }
+  } catch(e) { showError('Signal data error: '+e.message); cb([]); }
   finally { setScanBadge(false); }
 }
 
 // ── Popup builder ──
-function buildPopup(light) {
-  const sig = predictSignal(light.id);
+function buildPopupSync(light) {
+  const sig = predictSignalSync(light.id);
+  return buildPopupFromSig(light, sig);
+}
+
+function buildPopupFromSig(light, sig) {
   const C = {green:'#00e676',yellow:'#ffd740',red:'#ff1744'};
   const c = C[sig.phase], {plan} = sig, cycle = plan.red + plan.green + plan.yellow;
   const gP=(plan.green/cycle*100).toFixed(1), yP=(plan.yellow/cycle*100).toFixed(1), rP=(plan.red/cycle*100).toFixed(1);
@@ -321,6 +595,12 @@ function buildPopup(light) {
   if (sig.phase==='green')  { nY=sig.timeLeft; nR=sig.timeLeft+plan.yellow; nG=sig.timeLeft+plan.yellow+plan.red; }
   else if(sig.phase==='yellow'){ nR=sig.timeLeft; nG=sig.timeLeft+plan.red; nY=sig.timeLeft+plan.red+plan.green; }
   else { nG=sig.timeLeft; nY=sig.timeLeft+plan.green; nR=sig.timeLeft+plan.green+plan.yellow; }
+
+  const sourceLabel = sig.source === 'crowdsourced'
+    ? `● CROWDSOURCED · ${sig.reportCount} reports`
+    : '○ ESTIMATED (tap buttons below to help calibrate)';
+  const sourceClass = sig.source === 'crowdsourced' ? 'crowdsourced' : 'estimated';
+
   return `<div class="light-popup">
     <div class="popup-phase-row">
       <div class="popup-bulb" style="background:${c};box-shadow:0 0 12px ${c}"></div>
@@ -340,6 +620,7 @@ function buildPopup(light) {
       <div class="popup-cycle-seg" style="width:${yP}%;background:#ffd740"></div>
       <div class="popup-cycle-seg" style="width:${rP}%;background:#ff1744"></div>
     </div>
+    <div class="popup-source ${sourceClass}">${sourceLabel}</div>
   </div>`;
 }
 
@@ -354,11 +635,19 @@ function lightIcon(phase, isPrimary, isScout) {
 }
 
 function attachPopup(marker, light) {
-  marker.bindPopup(buildPopup(light), {maxWidth:260,className:''});
+  marker.bindPopup(buildPopupSync(light), {maxWidth:280,className:''});
   marker.on('popupopen', () => {
-    const iv = setInterval(() => {
-      if (marker.isPopupOpen()) marker.setPopupContent(buildPopup(light));
-      else clearInterval(iv);
+    // Immediately try to load crowdsourced data and update popup
+    predictSignal(light.id).then(sig => {
+      if (marker.isPopupOpen()) marker.setPopupContent(buildPopupFromSig(light, sig));
+    });
+    const iv = setInterval(async () => {
+      if (marker.isPopupOpen()) {
+        const sig = await predictSignal(light.id);
+        marker.setPopupContent(buildPopupFromSig(light, sig));
+      } else {
+        clearInterval(iv);
+      }
     }, 1000);
   });
 }
@@ -368,7 +657,7 @@ function renderMainLights(primaryId) {
   Object.values(lightMarkers).forEach(m => map.removeLayer(m));
   lightMarkers = {};
   lights.forEach(l => {
-    const sig = predictSignal(l.id), isPrimary = l.id === primaryId;
+    const sig = predictSignalSync(l.id), isPrimary = l.id === primaryId;
     const m = L.marker([l.lat, l.lon], {icon: lightIcon(sig.phase, isPrimary, false)}).addTo(map);
     attachPopup(m, l);
     lightMarkers[l.id] = m;
@@ -379,7 +668,7 @@ function renderScoutLights() {
   Object.values(scoutLightMarkers).forEach(m => map.removeLayer(m));
   scoutLightMarkers = {};
   scoutLights.forEach(l => {
-    const sig = predictSignal(l.id);
+    const sig = predictSignalSync(l.id);
     const m = L.marker([l.lat, l.lon], {icon: lightIcon(sig.phase, false, true)}).addTo(map);
     attachPopup(m, l);
     scoutLightMarkers[l.id] = m;
@@ -398,7 +687,7 @@ function tick() {
   }
 }
 
-function updateAdvisory() {
+async function updateAdvisory() {
   if (!userPos) return;
   const {lat, lon} = userPos;
   const spd = Math.round(userSpeedMph);
@@ -408,6 +697,7 @@ function updateAdvisory() {
   if (!lights.length) {
     document.getElementById('advisoryCard').style.display = 'none';
     document.getElementById('signalList').style.display = 'none';
+    document.getElementById('reportBar').classList.remove('visible');
     if (lastQueryPos) showNoSignal('No signals found within ' + SEARCH_RADIUS + 'm.');
     return;
   }
@@ -417,7 +707,7 @@ function updateAdvisory() {
     ...l,
     dist: haversine(lat, lon, l.lat, l.lon),
     bear: bearing(lat, lon, l.lat, l.lon),
-    sig: predictSignal(l.id)
+    sig: predictSignalSync(l.id)
   })).filter(l => l.dist > 8 && l.dist < SEARCH_RADIUS).sort((a, b) => {
     if (userHeading !== null) {
       const ah = x => angDiff(userHeading, x) < 60;
@@ -430,13 +720,23 @@ function updateAdvisory() {
   if (!enriched.length) {
     document.getElementById('advisoryCard').style.display = 'none';
     document.getElementById('signalList').style.display = 'none';
+    document.getElementById('reportBar').classList.remove('visible');
     return;
   }
 
   const primary = enriched[0];
+  primaryLight = primary;
+
+  // Async: load crowdsourced timing for primary light
+  const sig = await predictSignal(primary.id);
+  primary.sig = sig;
+
   renderMainLights(primary.id);
   updateAdvisoryCard(calcGLOSA(primary.dist, primary.sig), primary);
   updateSignalList(enriched.slice(0, 8));
+
+  // Show report bar when within 600m of a light
+  document.getElementById('reportBar').classList.toggle('visible', primary.dist < 600);
 }
 
 // ── UI updates ──
@@ -450,6 +750,16 @@ function updateAdvisoryCard(glosa, light) {
   document.getElementById('bulbR').className = 'tl-bulb r' + (light.sig.phase==='red'    ? ' lit' : '');
   document.getElementById('bulbY').className = 'tl-bulb y' + (light.sig.phase==='yellow' ? ' lit' : '');
   document.getElementById('bulbG').className = 'tl-bulb g' + (light.sig.phase==='green'  ? ' lit' : '');
+
+  // Data quality badge
+  const badge = document.getElementById('dataQualityBadge');
+  if (light.sig.source === 'crowdsourced') {
+    badge.className = 'crowdsourced';
+    badge.textContent = `REAL · ${light.sig.reportCount} REPORTS`;
+  } else {
+    badge.className = 'estimated';
+    badge.textContent = 'ESTIMATED';
+  }
 }
 
 function updateSignalList(list) {
@@ -495,7 +805,6 @@ function toggleOperator() {
   document.getElementById('operatorBanner').style.display = operatorMode ? 'block' : 'none';
   document.getElementById('map').classList.toggle('operator-mode', operatorMode);
   setGpsPill(operatorMode ? 'operator' : 'active', operatorMode ? 'OPERATOR' : 'GPS LIVE');
-  // Turn off scout if operator turns on
   if (operatorMode && scoutMode) toggleScout();
 }
 
@@ -552,6 +861,7 @@ function stopTracking() {
   document.getElementById('map').classList.remove('operator-mode');
   document.getElementById('advisoryCard').style.display = 'none';
   document.getElementById('signalList').style.display = 'none';
+  document.getElementById('reportBar').classList.remove('visible');
   hideNoSignal(); setGpsPill('','STANDBY');
   document.getElementById('speedVal').textContent = '0';
   document.getElementById('speedBadge').classList.remove('moving');
@@ -559,6 +869,7 @@ function stopTracking() {
   if (accuracyCircle) { map.removeLayer(accuracyCircle); accuracyCircle = null; }
   Object.values(lightMarkers).forEach(m => map.removeLayer(m)); lightMarkers = {};
   lights = []; lastQueryPos = null; userPos = null; prevGpsPos = null; userSpeedMph = 0;
+  primaryLight = null;
   clearScout();
 }
 
@@ -568,6 +879,7 @@ function recenter() { if (userPos) map.setView([userPos.lat, userPos.lon], 16); 
 function setGpsPill(state, label) { document.getElementById('gpsPill').className='gps-pill'+(state?' '+state:''); document.getElementById('gpsLabel').textContent=label; }
 function setScanBadge(on) { document.getElementById('scanBadge').classList.toggle('visible',on); }
 function showError(msg) { const t=document.getElementById('errToast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>{t.style.display='none';},5000); }
+function showSuccess(msg) { const t=document.getElementById('successToast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>{t.style.display='none';},3000); }
 function showNoSignal(msg) { const e=document.getElementById('noSignalMsg'); e.textContent=msg; e.style.display='block'; }
 function hideNoSignal() { document.getElementById('noSignalMsg').style.display='none'; }
 

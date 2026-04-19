@@ -555,7 +555,7 @@ function bearing(la1,lo1,la2,lo2) {
 function angDiff(a,b){const d=Math.abs(a-b)%360;return d>180?360-d:d;}
 
 // ── OSM fetch ──
-const OVERPASS_PROXY = 'https://overpass.private.coffee/api/interpreter';
+const OVERPASS_PROXY = 'https://overpass-api.de/api/interpreter';
 const SEARCH_RADIUS  = 800;
 const SCOUT_RADIUS   = 300;
 const REQUERY_DIST   = 250;
@@ -572,13 +572,21 @@ let userHeading = null, userSpeedMph = 0, prevGpsPos = null;
 async function fetchLights(lat, lon, radius, cb) {
   setScanBadge(true);
   const q = `[out:json][timeout:14];node["highway"="traffic_signals"](around:${radius},${lat},${lon});out body;`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(OVERPASS_PROXY, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'data='+encodeURIComponent(q) });
+    const res = await fetch(OVERPASS_PROXY, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'data='+encodeURIComponent(q), signal: controller.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     cb((data.elements||[]).map(el=>({id:el.id,lat:el.lat,lon:el.lon})));
-  } catch(e) { showError('Signal data error: '+e.message); cb([]); }
-  finally { setScanBadge(false); }
+  } catch(e) {
+    if (e.name === 'AbortError') showError('Signal scan timed out — retrying soon');
+    else showError('Signal data error: '+e.message);
+    cb([]);
+  } finally {
+    clearTimeout(timeout);
+    setScanBadge(false);
+  }
 }
 
 // ── Popup builder ──

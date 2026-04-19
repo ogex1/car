@@ -1,367 +1,974 @@
 <!DOCTYPE html>
-import { useState, useEffect, useRef, useCallback } from "react";
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>GLOSA — Green Light Advisor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c10;
+    --panel: #0e1318;
+    --card: #131920;
+    --border: #1c2530;
+    --green: #00e676;
+    --yellow: #ffd740;
+    --red: #ff1744;
+    --blue: #2979ff;
+    --text: #dde6f0;
+    --muted: #4a5a6a;
+    --dim: #1e2d3d;
+  }
 
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-const SEARCH_RADIUS = 600;
-const REQUERY_DISTANCE = 250;
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    overflow: hidden;
+  }
+
+  /* ── MAP ───────────────────────────────────── */
+  #map {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    filter: brightness(0.55) saturate(0.6) hue-rotate(190deg);
+  }
+
+  .leaflet-control-zoom { display: none; }
+  .leaflet-control-attribution { font-size: 9px; opacity: 0.4; }
+
+  /* ── TOP HUD ───────────────────────────────── */
+  #topHud {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+    padding: 14px 16px 10px;
+    background: linear-gradient(to bottom, rgba(8,12,16,0.95) 0%, rgba(8,12,16,0) 100%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .app-title {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    color: var(--text);
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+
+  .app-title span { color: var(--green); }
+
+  .gps-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-left: auto;
+    transition: border-color 0.3s, color 0.3s;
+  }
+
+  .gps-pill.active { border-color: var(--green); color: var(--green); }
+  .gps-pill.acquiring { border-color: var(--yellow); color: var(--yellow); }
+  .gps-pill.error { border-color: var(--red); color: var(--red); }
+
+  .gps-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .gps-pill.active .gps-dot { animation: pulse 1.5s ease-in-out infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── BOTTOM PANEL ──────────────────────────── */
+  #bottomPanel {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    padding: 0 12px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+  }
+
+  #bottomPanel > * { pointer-events: all; }
+
+  /* ── ADVISORY CARD ─────────────────────────── */
+  #advisoryCard {
+    background: rgba(13,19,24,0.96);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px 18px;
+    display: none;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(12px);
+    transition: border-color 0.35s;
+  }
+
+  #advisoryCard.green { border-color: var(--green); }
+  #advisoryCard.yellow { border-color: var(--yellow); }
+  #advisoryCard.red { border-color: var(--red); }
+
+  #advisoryCard::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    transition: background 0.35s;
+  }
+
+  #advisoryCard.green::before { background: var(--green); box-shadow: 0 0 16px var(--green); }
+  #advisoryCard.yellow::before { background: var(--yellow); box-shadow: 0 0 16px var(--yellow); }
+  #advisoryCard.red::before { background: var(--red); box-shadow: 0 0 16px var(--red); }
+
+  .advisory-inner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  /* Traffic light widget */
+  .tl-widget {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: #050709;
+    border: 1px solid #1a2030;
+    border-radius: 10px;
+    padding: 8px 7px;
+    flex-shrink: 0;
+  }
+
+  .tl-bulb {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    opacity: 0.15;
+    transition: opacity 0.3s, box-shadow 0.3s;
+  }
+
+  .tl-bulb.r { background: var(--red); }
+  .tl-bulb.y { background: var(--yellow); }
+  .tl-bulb.g { background: var(--green); }
+  .tl-bulb.lit { opacity: 1; }
+  .tl-bulb.r.lit { box-shadow: 0 0 14px var(--red); }
+  .tl-bulb.y.lit { box-shadow: 0 0 14px var(--yellow); }
+  .tl-bulb.g.lit { box-shadow: 0 0 14px var(--green); }
+
+  /* Speed + info */
+  .advisory-body { flex: 1; min-width: 0; }
+
+  .advisory-speed-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+
+  .advisory-speed {
+    font-size: 64px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -2px;
+    transition: color 0.35s;
+    color: var(--text);
+  }
+
+  #advisoryCard.green .advisory-speed { color: var(--green); }
+  #advisoryCard.yellow .advisory-speed { color: var(--yellow); }
+  #advisoryCard.red .advisory-speed { color: var(--red); }
+
+  .advisory-unit {
+    font-family: 'DM Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  .advisory-countdown {
+    font-size: 13px;
+    font-family: 'DM Mono', monospace;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .advisory-label-text {
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-top: 4px;
+    line-height: 1.2;
+  }
+
+  .advisory-distance {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  /* ── SIGNAL LIST ───────────────────────────── */
+  #signalList {
+    background: rgba(13,19,24,0.94);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    display: none;
+    backdrop-filter: blur(10px);
+  }
+
+  .signal-list-header {
+    padding: 10px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .signal-items {
+    display: flex;
+    overflow-x: auto;
+    padding: 10px;
+    gap: 8px;
+    scrollbar-width: none;
+  }
+
+  .signal-items::-webkit-scrollbar { display: none; }
+
+  .signal-chip {
+    flex-shrink: 0;
+    background: var(--dim);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    min-width: 70px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+  }
+
+  .signal-chip.primary { border-color: var(--blue); }
+
+  .signal-chip-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+  }
+
+  .signal-chip-dist {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .signal-chip-phase {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .signal-chip-timer {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  /* ── START / CONTROL BAR ───────────────────── */
+  #controlBar {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn-main {
+    flex: 1;
+    background: var(--blue);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 16px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.12s;
+  }
+
+  .btn-main:active { transform: scale(0.97); opacity: 0.85; }
+  .btn-main.stop { background: rgba(255,23,68,0.15); border: 1px solid var(--red); color: var(--red); }
+
+  .btn-recenter {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0 18px;
+    color: var(--muted);
+    font-size: 20px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+    display: none;
+  }
+
+  .btn-recenter:hover { border-color: var(--blue); color: var(--text); }
+
+  /* ── SCANNING INDICATOR ────────────────────── */
+  #scanBadge {
+    position: fixed;
+    top: 60px; right: 16px;
+    z-index: 20;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    display: none;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #scanBadge.visible { display: flex; }
+
+  .scan-spinner {
+    width: 10px; height: 10px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── NO SIGNAL STATE ───────────────────────── */
+  #noSignalMsg {
+    background: rgba(13,19,24,0.94);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    text-align: center;
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    display: none;
+    line-height: 1.7;
+    backdrop-filter: blur(10px);
+  }
+
+  /* ── LOCATION MARKER ───────────────────────── */
+  .user-marker-outer {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: rgba(41,121,255,0.25);
+    border: 2px solid var(--blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 4px rgba(41,121,255,0.12);
+    animation: locpulse 2s ease-in-out infinite;
+  }
+
+  .user-marker-inner {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--blue);
+  }
+
+  @keyframes locpulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(41,121,255,0.12); }
+    50% { box-shadow: 0 0 0 10px rgba(41,121,255,0.04); }
+  }
+
+  /* ── LIGHT MARKERS ─────────────────────────── */
+  .light-marker {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(0,0,0,0.5);
+    cursor: pointer;
+    transition: transform 0.2s;
+  }
+
+  .light-marker.primary {
+    width: 18px; height: 18px;
+    border: 2.5px solid white;
+    box-shadow: 0 0 12px currentColor;
+  }
+
+  /* error toast */
+  #errToast {
+    position: fixed;
+    top: 70px; left: 16px; right: 16px;
+    z-index: 30;
+    background: rgba(255,23,68,0.12);
+    border: 1px solid rgba(255,23,68,0.35);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: #ff6b8a;
+    line-height: 1.5;
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topHud">
+  <div class="app-title">GL<span>O</span>SA</div>
+  <div class="gps-pill" id="gpsPill">
+    <div class="gps-dot"></div>
+    <span id="gpsLabel">STANDBY</span>
+  </div>
+</div>
+
+<div id="scanBadge">
+  <div class="scan-spinner"></div>
+  <span>SCANNING</span>
+</div>
+
+<div id="errToast"></div>
+
+<div id="bottomPanel">
+
+  <div id="advisoryCard">
+    <div class="advisory-inner">
+      <div class="tl-widget">
+        <div class="tl-bulb r" id="bulbR"></div>
+        <div class="tl-bulb y" id="bulbY"></div>
+        <div class="tl-bulb g" id="bulbG"></div>
+      </div>
+      <div class="advisory-body">
+        <div class="advisory-speed-row">
+          <div class="advisory-speed" id="advSpeed">--</div>
+          <div class="advisory-unit">MPH</div>
+        </div>
+        <div class="advisory-label-text" id="advLabel">Calculating...</div>
+        <div class="advisory-countdown" id="advCountdown"></div>
+        <div class="advisory-distance" id="advDistance"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="signalList">
+    <div class="signal-list-header">
+      <span>Signals Ahead</span>
+      <span id="signalCount"></span>
+    </div>
+    <div class="signal-items" id="signalItems"></div>
+  </div>
+
+  <div id="noSignalMsg"></div>
+
+  <div id="controlBar">
+    <button class="btn-main" id="mainBtn" onclick="handleMainBtn()">START</button>
+    <button class="btn-recenter" id="recenterBtn" onclick="recenter()" title="Re-center map">⊕</button>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// CONFIG
+// ═══════════════════════════════════════════════════════════
+const OVERPASS_PROXY = 'https://overpass.private.coffee/api/interpreter';
+const SEARCH_RADIUS  = 500;   // meters
+const REQUERY_DIST   = 200;   // meters before re-querying OSM
+const UPDATE_MS      = 1000;  // signal prediction refresh
+const MAX_SPEED      = 60;
+const MIN_SPEED      = 5;
+
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let map, userMarker, accuracyCircle;
+let lightMarkers = {};
+let watching     = false;
+let watchId      = null;
+let tickTimer    = null;
+let userPos      = null;
+let lastQueryPos = null;
+let lights       = [];       // [{id, lat, lon}]
+let userHeading  = null;
+let userSpeedMph = 0;
+let prevGpsPos   = null;
+
+// ═══════════════════════════════════════════════════════════
+// MAP INIT
+// ═══════════════════════════════════════════════════════════
+function initMap() {
+  map = L.map('map', {
+    zoomControl: false,
+    attributionControl: true,
+    center: [39.8, -98.5],
+    zoom: 5
+  });
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(map);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SIGNAL PREDICTION MODEL
+// ═══════════════════════════════════════════════════════════
+function getTimingPlan(hour) {
+  if (hour >= 7  && hour < 9)  return { red: 58, green: 42, yellow: 4 };
+  if (hour >= 16 && hour < 19) return { red: 68, green: 48, yellow: 4 };
+  if (hour >= 22 || hour < 6)  return { red: 38, green: 28, yellow: 3 };
+  return                              { red: 52, green: 38, yellow: 4 };
+}
+
+function hashId(id) {
+  // deterministic per-intersection phase offset (0 to cycle length)
+  return ((BigInt(id) * 2654435761n) & 0xFFFFFFFFn);
+}
+
+function predictSignal(lightId) {
+  const now   = Date.now() / 1000;
+  const hour  = new Date().getHours();
+  const plan  = getTimingPlan(hour);
+  const cycle = plan.red + plan.green + plan.yellow;
+
+  const seed   = Number(hashId(BigInt(lightId)) % BigInt(Math.round(cycle * 1000))) / 1000;
+  const t      = (now + seed) % cycle;
+
+  let phase, timeLeft, nextGreenIn;
+
+  if (t < plan.green) {
+    phase       = 'green';
+    timeLeft    = plan.green - t;
+    nextGreenIn = 0;
+  } else if (t < plan.green + plan.yellow) {
+    phase       = 'yellow';
+    timeLeft    = plan.green + plan.yellow - t;
+    nextGreenIn = timeLeft + plan.red;
+  } else {
+    phase       = 'red';
+    timeLeft    = cycle - t;
+    nextGreenIn = timeLeft;
+  }
+
+  return { phase, timeLeft: Math.round(timeLeft), nextGreenIn: Math.round(nextGreenIn), plan, cycle };
+}
+
+// ═══════════════════════════════════════════════════════════
+// GLOSA CALCULATION
+// ═══════════════════════════════════════════════════════════
+function calcGLOSA(distMeters, sig) {
+  if (distMeters < 8) return { speed: null, label: 'STOPPED', detail: 'At intersection', color: 'red' };
+
+  const distMiles = distMeters / 1609.34;
+  const { phase, timeLeft, nextGreenIn, plan } = sig;
+
+  const clamp = v => Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(v)));
+  const mph   = s => distMiles / (s / 3600);
+
+  if (phase === 'green') {
+    const windowEnd = timeLeft - 1.5;
+    if (windowEnd > 1) {
+      const ideal = mph(windowEnd * 0.6);
+      if (ideal >= MIN_SPEED && ideal <= MAX_SPEED) {
+        return { speed: clamp(ideal), label: 'CATCH GREEN', detail: `Green ends in ${timeLeft}s`, color: 'green' };
+      }
+    }
+    // miss this green — target next
+    const nextStart = timeLeft + plan.yellow + plan.red;
+    const nextMid   = nextStart + plan.green * 0.4;
+    return { speed: clamp(mph(nextMid)), label: 'NEXT GREEN', detail: `Next green in ${Math.round(nextStart)}s`, color: 'yellow' };
+  }
+
+  if (phase === 'yellow') {
+    if (distMeters < 70) {
+      return { speed: null, label: 'STOP', detail: 'Light turning red', color: 'red' };
+    }
+    const nextStart = timeLeft + plan.red;
+    const nextMid   = nextStart + plan.green * 0.4;
+    return { speed: clamp(mph(nextMid)), label: 'SLOW DOWN', detail: `Green in ${Math.round(nextStart)}s`, color: 'yellow' };
+  }
+
+  // red
+  if (nextGreenIn < 3) {
+    return { speed: clamp(mph(plan.green * 0.5)), label: 'GREEN SOON', detail: 'Light changing now', color: 'green' };
+  }
+  const targetTime = nextGreenIn + plan.green * 0.35;
+  return { speed: clamp(mph(targetTime)), label: 'EASE OFF', detail: `Green in ${nextGreenIn}s`, color: 'red' };
+}
+
+// ═══════════════════════════════════════════════════════════
+// DISTANCE + BEARING
+// ═══════════════════════════════════════════════════════════
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
-  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// Deterministic hash from node ID for consistent per-intersection offset
-function hashId(id) {
-  return ((id * 2654435761) >>> 0) % 100000;
+function bearing(lat1, lon1, lat2, lon2) {
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+  const x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180)
+          - Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+  return ((Math.atan2(y, x) * 180 / Math.PI) + 360) % 360;
 }
 
-// ML prediction model: statistical timing based on time-of-day + intersection ID
-function predictSignal(nodeId, timestamp) {
-  const seed = hashId(nodeId);
-  const offset = (seed / 100000) * 120;
-  const hour = new Date(timestamp).getHours();
-  const isPeak = (hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 19);
-  const isNight = hour >= 23 || hour <= 5;
+function angDiff(a, b) {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}
 
-  const cycleLength = isNight ? 55 : isPeak ? 115 : 80;
-  const greenRatio = isPeak ? 0.42 : 0.48;
-  const yellowRatio = 0.05;
-
-  const t = ((timestamp / 1000) + offset) % cycleLength;
-  const greenEnd = cycleLength * greenRatio;
-  const yellowEnd = greenEnd + cycleLength * yellowRatio;
-
-  if (t < greenEnd) {
-    return { phase: "green", timeRemaining: Math.ceil(greenEnd - t), cycleLength };
-  } else if (t < yellowEnd) {
-    return { phase: "yellow", timeRemaining: Math.ceil(yellowEnd - t), cycleLength };
-  } else {
-    return { phase: "red", timeRemaining: Math.ceil(cycleLength - t), cycleLength };
+// ═══════════════════════════════════════════════════════════
+// OSM FETCH
+// ═══════════════════════════════════════════════════════════
+async function fetchLights(lat, lon) {
+  setScanBadge(true);
+  const q = `[out:json][timeout:12];node["highway"="traffic_signals"](around:${SEARCH_RADIUS},${lat},${lon});out body;`;
+  try {
+    const res = await fetch(OVERPASS_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(q)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    lights = (data.elements || []).map(el => ({ id: el.id, lat: el.lat, lon: el.lon }));
+    lastQueryPos = { lat, lon };
+    renderLightMarkers();
+  } catch (e) {
+    showError('Signal data unavailable: ' + e.message);
+  } finally {
+    setScanBadge(false);
   }
 }
 
-function getGLOSA(distMeters, speedMph, signal) {
-  const speedMps = speedMph / 2.237;
+// ═══════════════════════════════════════════════════════════
+// MAP MARKERS
+// ═══════════════════════════════════════════════════════════
+function makeUserMarker() {
+  const el = document.createElement('div');
+  el.innerHTML = `<div class="user-marker-outer"><div class="user-marker-inner"></div></div>`;
+  return L.marker([0,0], {
+    icon: L.divIcon({ html: el.innerHTML, className: '', iconSize: [22,22], iconAnchor: [11,11] }),
+    zIndexOffset: 1000
+  });
+}
 
-  if (distMeters < 15) return { type: "STOP", label: "STOP", detail: null };
+function renderLightMarkers() {
+  // clear old
+  Object.values(lightMarkers).forEach(m => map.removeLayer(m));
+  lightMarkers = {};
 
-  if (signal.phase === "green") {
-    const eta = speedMps > 0.5 ? distMeters / speedMps : 999;
-    if (eta <= signal.timeRemaining) {
-      return { type: "GO", label: "CLEAR", detail: `LIGHT GREEN FOR ${signal.timeRemaining}s` };
-    } else {
-      const nextGreen = signal.timeRemaining + signal.cycleLength * 0.55;
-      const rec = Math.round((distMeters / nextGreen) * 2.237);
-      if (rec < 5 || rec > 55) return { type: "STOP", label: "STOP", detail: "WAIT FOR NEXT CYCLE" };
-      return { type: "SLOW", label: `${rec} MPH`, detail: "SLOW TO CATCH NEXT GREEN" };
+  lights.forEach(l => {
+    const sig = predictSignal(l.id);
+    const colors = { green: '#00e676', yellow: '#ffd740', red: '#ff1744' };
+    const c = colors[sig.phase];
+    const el = document.createElement('div');
+    el.className = 'light-marker';
+    el.style.background = c;
+    el.style.boxShadow = `0 0 8px ${c}`;
+
+    const marker = L.marker([l.lat, l.lon], {
+      icon: L.divIcon({ html: el.outerHTML, className: '', iconSize: [14,14], iconAnchor: [7,7] })
+    }).addTo(map);
+
+    marker.bindPopup(`<b style="font-family:monospace;font-size:12px">${sig.phase.toUpperCase()} · ${sig.timeLeft}s</b>`);
+    lightMarkers[l.id] = marker;
+  });
+}
+
+function highlightPrimaryMarker(primaryId) {
+  // Reset all to normal size then highlight primary
+  lights.forEach(l => {
+    const m = lightMarkers[l.id];
+    if (!m) return;
+    const sig = predictSignal(l.id);
+    const colors = { green: '#00e676', yellow: '#ffd740', red: '#ff1744' };
+    const c = colors[sig.phase];
+    const isPrimary = l.id === primaryId;
+    const size = isPrimary ? 18 : 14;
+    const el = document.createElement('div');
+    el.className = 'light-marker' + (isPrimary ? ' primary' : '');
+    el.style.background = c;
+    el.style.color = c;
+    el.style.boxShadow = isPrimary ? `0 0 14px ${c}` : `0 0 6px ${c}`;
+    m.setIcon(L.divIcon({ html: el.outerHTML, className: '', iconSize: [size,size], iconAnchor: [size/2,size/2] }));
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN UPDATE LOOP
+// ═══════════════════════════════════════════════════════════
+function tick() {
+  if (!userPos || !watching) return;
+
+  const { lat, lon } = userPos;
+
+  // Re-query OSM if moved far enough
+  if (!lastQueryPos || haversine(lastQueryPos.lat, lastQueryPos.lon, lat, lon) > REQUERY_DIST) {
+    fetchLights(lat, lon);
+  }
+
+  if (!lights.length) {
+    document.getElementById('advisoryCard').style.display = 'none';
+    document.getElementById('signalList').style.display = 'none';
+    if (lastQueryPos) {
+      showNoSignal('No traffic signals found within ' + SEARCH_RADIUS + 'm.');
     }
+    return;
   }
 
-  if (signal.phase === "yellow") {
-    if (distMeters < 80) return { type: "STOP", label: "STOP", detail: "TOO CLOSE" };
-    const nextGreen = signal.timeRemaining + signal.cycleLength * 0.5;
-    const rec = Math.round((distMeters / nextGreen) * 2.237);
-    if (rec < 5 || rec > 55) return { type: "STOP", label: "STOP", detail: null };
-    return { type: "ADVISORY", label: `${rec} MPH`, detail: `CATCH GREEN IN ${Math.round(nextGreen)}s` };
+  hideNoSignal();
+
+  // Sort lights by distance, prefer ones roughly ahead
+  const enriched = lights.map(l => ({
+    ...l,
+    dist: haversine(lat, lon, l.lat, l.lon),
+    bear: bearing(lat, lon, l.lat, l.lon),
+    sig:  predictSignal(l.id)
+  })).filter(l => l.dist > 8 && l.dist < SEARCH_RADIUS).sort((a, b) => {
+    if (userHeading !== null) {
+      const da = angDiff(userHeading, a.bear);
+      const db = angDiff(userHeading, b.bear);
+      if (da < 60 && db >= 60) return -1;
+      if (db < 60 && da >= 60) return 1;
+    }
+    return a.dist - b.dist;
+  });
+
+  if (!enriched.length) {
+    document.getElementById('advisoryCard').style.display = 'none';
+    document.getElementById('signalList').style.display = 'none';
+    return;
   }
 
-  // Red phase
-  const rec = Math.round((distMeters / signal.timeRemaining) * 2.237);
-  if (rec < 5) return { type: "STOP", label: "WAIT", detail: `${signal.timeRemaining}s REMAINING` };
-  if (rec > 55) return { type: "STOP", label: "STOP", detail: `${signal.timeRemaining}s REMAINING` };
-  return { type: "ADVISORY", label: `${rec} MPH`, detail: `CATCH GREEN IN ${signal.timeRemaining}s` };
+  const primary = enriched[0];
+  highlightPrimaryMarker(primary.id);
+
+  // Advisory card
+  const glosa = calcGLOSA(primary.dist, primary.sig);
+  updateAdvisoryCard(glosa, primary);
+
+  // Signal list
+  updateSignalList(enriched.slice(0, 6));
+
+  // Refresh markers colors
+  renderLightMarkers();
+  highlightPrimaryMarker(primary.id);
 }
 
-const PHASE_COLOR = { green: "#00e87a", yellow: "#f5c400", red: "#ff2d55" };
-const GLOSA_COLOR = { GO: "#00e87a", SLOW: "#f5c400", STOP: "#ff2d55", ADVISORY: "#00c4ff" };
+// ═══════════════════════════════════════════════════════════
+// UI UPDATES
+// ═══════════════════════════════════════════════════════════
+function updateAdvisoryCard(glosa, light) {
+  const card = document.getElementById('advisoryCard');
+  card.style.display = 'block';
+  card.className = glosa.color;
 
-const Bar = ({ label, value, color }) => (
-  <div style={{ border: "1px solid #1c1c1c", padding: "14px 18px" }}>
-    <div style={{ fontSize: 9, letterSpacing: "0.35em", color: "#3a3a3a", marginBottom: 6 }}>{label}</div>
-    <div style={{ fontSize: 24, fontWeight: "bold", color: color || "#d0d0d0", letterSpacing: "0.05em" }}>{value}</div>
-  </div>
-);
+  document.getElementById('advSpeed').textContent = glosa.speed !== null ? glosa.speed : '--';
+  document.getElementById('advLabel').textContent  = glosa.label;
+  document.getElementById('advCountdown').textContent = glosa.detail;
+  document.getElementById('advDistance').textContent = `${Math.round(light.dist)}m ahead · ${light.sig.phase} for ${light.sig.timeLeft}s`;
 
-export default function GLOSA() {
-  const [gpsStatus, setGpsStatus] = useState("idle");
-  const [position, setPosition] = useState(null);
-  const [speed, setSpeed] = useState(0);
-  const [intersections, setIntersections] = useState([]);
-  const [signals, setSignals] = useState({});
-  const [queryStatus, setQueryStatus] = useState("idle");
-  const [tick, setTick] = useState(0);
-  const lastQueryPos = useRef(null);
-  const prevPosRef = useRef(null);
-  const watchRef = useRef(null);
+  // traffic light bulbs
+  document.getElementById('bulbR').className = 'tl-bulb r' + (light.sig.phase === 'red'    ? ' lit' : '');
+  document.getElementById('bulbY').className = 'tl-bulb y' + (light.sig.phase === 'yellow' ? ' lit' : '');
+  document.getElementById('bulbG').className = 'tl-bulb g' + (light.sig.phase === 'green'  ? ' lit' : '');
+}
 
-  useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
+function updateSignalList(list) {
+  const panel = document.getElementById('signalList');
+  const items = document.getElementById('signalItems');
+  const count = document.getElementById('signalCount');
 
-  useEffect(() => {
-    if (!intersections.length) return;
-    const now = Date.now();
-    const updated = {};
-    intersections.forEach(i => { updated[i.id] = predictSignal(i.id, now); });
-    setSignals(updated);
-  }, [tick, intersections]);
+  panel.style.display = 'block';
+  count.textContent = list.length;
 
-  const queryOSM = useCallback(async (lat, lon) => {
-    setQueryStatus("scanning");
-    const q = `[out:json][timeout:12];node["highway"="traffic_signals"](around:${SEARCH_RADIUS},${lat},${lon});out body;`;
-    try {
-      const res = await fetch(OVERPASS_URL, { method: "POST", body: "data=" + encodeURIComponent(q) });
-      const data = await res.json();
-      setIntersections((data.elements || []).map(el => ({ id: el.id, lat: el.lat, lon: el.lon })));
-      setQueryStatus("ready");
-      lastQueryPos.current = { lat, lon };
-    } catch {
-      setQueryStatus("error");
-    }
-  }, []);
+  const colors = { green: '#00e676', yellow: '#ffd740', red: '#ff1744' };
 
-  const startTracking = () => {
-    if (!navigator.geolocation) { setGpsStatus("denied"); return; }
-    setGpsStatus("acquiring");
-    watchRef.current = navigator.geolocation.watchPosition(
-      pos => {
-        const { latitude: lat, longitude: lon, speed: gpsSpd } = pos.coords;
-        let mph = gpsSpd != null ? gpsSpd * 2.237 : 0;
-        if (!gpsSpd && prevPosRef.current) {
-          const d = haversine(prevPosRef.current.lat, prevPosRef.current.lon, lat, lon);
-          const dt = (Date.now() - prevPosRef.current.t) / 1000;
-          if (dt > 0.5 && dt < 5) mph = (d / dt) * 2.237;
-        }
-        setPosition({ lat, lon });
-        setSpeed(Math.round(mph));
-        setGpsStatus("active");
-        prevPosRef.current = { lat, lon, t: Date.now() };
-        const shouldQuery = !lastQueryPos.current ||
-          haversine(lastQueryPos.current.lat, lastQueryPos.current.lon, lat, lon) > REQUERY_DISTANCE;
-        if (shouldQuery) queryOSM(lat, lon);
-      },
-      () => setGpsStatus("denied"),
-      { enableHighAccuracy: true, maximumAge: 2000 }
-    );
-  };
-
-  const stopTracking = () => {
-    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
-    setGpsStatus("idle");
-    setPosition(null);
-    setIntersections([]);
-    setSpeed(0);
-    lastQueryPos.current = null;
-  };
-
-  const nearby = position
-    ? intersections
-        .map(i => ({
-          ...i,
-          distance: Math.round(haversine(position.lat, position.lon, i.lat, i.lon)),
-          signal: signals[i.id] || predictSignal(i.id, Date.now()),
-        }))
-        .filter(i => i.distance <= SEARCH_RADIUS)
-        .sort((a, b) => a.distance - b.distance)
-        .slice(0, 6)
-    : [];
-
-  const primary = nearby[0] || null;
-  const glosa = primary ? getGLOSA(primary.distance, speed, primary.signal) : null;
-
-  const statusDot = { active: "#00e87a", acquiring: "#f5c400", denied: "#ff2d55", idle: "#2a2a2a" };
-
-  return (
-    <div style={{
-      minHeight: "100vh",
-      background: "#080808",
-      color: "#c8c8c8",
-      fontFamily: "'Courier New', 'Lucida Console', monospace",
-      display: "flex",
-      flexDirection: "column",
-      padding: "20px",
-      boxSizing: "border-box",
-    }}>
-      <style>{`
-        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-        @keyframes glow { 0%,100%{box-shadow:0 0 20px var(--c)88} 50%{box-shadow:0 0 45px var(--c)cc} }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
-      `}</style>
-
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
-        <div>
-          <div style={{ fontSize: 9, letterSpacing: "0.4em", color: "#2e2e2e", marginBottom: 4 }}>GREEN LIGHT ADVISORY</div>
-          <div style={{ fontSize: 20, fontWeight: "bold", letterSpacing: "0.15em" }}>GLOSA</div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, letterSpacing: "0.2em" }}>
-          <div style={{
-            width: 7, height: 7, borderRadius: "50%",
-            background: statusDot[gpsStatus],
-            animation: gpsStatus === "acquiring" ? "blink 1s infinite" : "none"
-          }} />
-          <span style={{ color: "#3a3a3a" }}>
-            {gpsStatus === "active" ? "GPS LIVE" : gpsStatus === "acquiring" ? "ACQUIRING" : gpsStatus === "denied" ? "GPS DENIED" : "STANDBY"}
-          </span>
-        </div>
-      </div>
-
-      {gpsStatus === "idle" || gpsStatus === "denied" ? (
-        /* Start screen */
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 32, animation: "fadeIn 0.4s ease" }}>
-          <div style={{ textAlign: "center" }}>
-            <div style={{ fontSize: 56, color: "#1c1c1c", lineHeight: 1, marginBottom: 20 }}>⬤</div>
-            <div style={{ fontSize: 10, letterSpacing: "0.35em", color: "#3a3a3a", lineHeight: 2.4 }}>
-              ML SIGNAL PREDICTION<br/>
-              OSM INTERSECTION DATA<br/>
-              REAL-TIME GLOSA ADVISORY
-            </div>
-          </div>
-          {gpsStatus === "denied" && (
-            <div style={{ fontSize: 10, color: "#ff2d55", letterSpacing: "0.2em" }}>GPS PERMISSION DENIED</div>
-          )}
-          <button onClick={startTracking} style={{
-            background: "transparent",
-            border: "1px solid #282828",
-            color: "#888",
-            padding: "13px 44px",
-            fontFamily: "inherit",
-            fontSize: 11,
-            letterSpacing: "0.35em",
-            cursor: "pointer",
-            transition: "all 0.2s"
-          }}
-            onMouseEnter={e => { e.target.style.borderColor="#555"; e.target.style.color="#c8c8c8"; }}
-            onMouseLeave={e => { e.target.style.borderColor="#282828"; e.target.style.color="#888"; }}
-          >
-            START TRACKING
-          </button>
-        </div>
-      ) : gpsStatus === "acquiring" ? (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ fontSize: 10, letterSpacing: "0.35em", color: "#3a3a3a", animation: "blink 1.2s infinite" }}>
-            ACQUIRING GPS LOCK...
-          </div>
-        </div>
-      ) : primary ? (
-        /* Main HUD */
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16, animation: "fadeIn 0.3s ease" }}>
-
-          {/* Primary signal indicator */}
-          <div style={{
-            border: `1px solid ${PHASE_COLOR[primary.signal.phase]}18`,
-            padding: "22px",
-            position: "relative",
-            overflow: "hidden"
-          }}>
-            <div style={{
-              position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
-              background: `radial-gradient(ellipse at 20% 50%, ${PHASE_COLOR[primary.signal.phase]}06 0%, transparent 70%)`,
-              pointerEvents: "none"
-            }} />
-            <div style={{ fontSize: 9, letterSpacing: "0.35em", color: "#2e2e2e", marginBottom: 18 }}>NEAREST SIGNAL</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-              <div style={{
-                width: 64, height: 64, borderRadius: "50%",
-                background: PHASE_COLOR[primary.signal.phase],
-                "--c": PHASE_COLOR[primary.signal.phase],
-                animation: "glow 2s infinite",
-                flexShrink: 0
-              }} />
-              <div>
-                <div style={{ fontSize: 48, fontWeight: "bold", color: PHASE_COLOR[primary.signal.phase], lineHeight: 1, letterSpacing: "-0.02em" }}>
-                  {primary.signal.timeRemaining}
-                  <span style={{ fontSize: 16, color: `${PHASE_COLOR[primary.signal.phase]}88`, marginLeft: 4 }}>s</span>
-                </div>
-                <div style={{ fontSize: 9, letterSpacing: "0.35em", color: "#2e2e2e", marginTop: 6 }}>
-                  {primary.signal.phase.toUpperCase()} PHASE
-                </div>
-              </div>
-              <div style={{ marginLeft: "auto", textAlign: "right" }}>
-                <div style={{ fontSize: 26, fontWeight: "bold", letterSpacing: "-0.01em" }}>{primary.distance}</div>
-                <div style={{ fontSize: 9, letterSpacing: "0.3em", color: "#2e2e2e", marginTop: 4 }}>METERS</div>
-              </div>
-            </div>
-          </div>
-
-          {/* GLOSA advisory */}
-          <div style={{
-            border: `1px solid ${GLOSA_COLOR[glosa.type]}18`,
-            padding: "18px 22px",
-            background: `${GLOSA_COLOR[glosa.type]}05`
-          }}>
-            <div style={{ fontSize: 9, letterSpacing: "0.35em", color: "#2e2e2e", marginBottom: 10 }}>ADVISORY</div>
-            <div style={{ fontSize: 38, fontWeight: "bold", color: GLOSA_COLOR[glosa.type], letterSpacing: "0.05em" }}>
-              {glosa.label}
-            </div>
-            {glosa.detail && (
-              <div style={{ fontSize: 9, color: "#3a3a3a", marginTop: 8, letterSpacing: "0.25em" }}>{glosa.detail}</div>
-            )}
-          </div>
-
-          {/* Stats row */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-            <Bar label="SPEED" value={`${speed} mph`} />
-            <Bar label="CYCLE" value={`${primary.signal.cycleLength}s`} />
-            <Bar label="SIGNALS" value={nearby.length} color="#3a3a3a" />
-          </div>
-
-          {/* Upcoming signals */}
-          {nearby.length > 1 && (
-            <div>
-              <div style={{ fontSize: 9, letterSpacing: "0.35em", color: "#2e2e2e", marginBottom: 10 }}>UPCOMING</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {nearby.slice(1, 5).map(i => (
-                  <div key={i.id} style={{
-                    display: "flex", alignItems: "center", gap: 14,
-                    padding: "9px 14px",
-                    border: "1px solid #111",
-                    fontSize: 11
-                  }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: PHASE_COLOR[i.signal.phase], flexShrink: 0 }} />
-                    <div style={{ color: PHASE_COLOR[i.signal.phase], width: 44 }}>{i.signal.timeRemaining}s</div>
-                    <div style={{ color: "#3a3a3a" }}>{i.distance}m</div>
-                    <div style={{ marginLeft: "auto", fontSize: 9, letterSpacing: "0.2em", color: "#2a2a2a" }}>
-                      {i.signal.phase.toUpperCase()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Stop button */}
-          <button onClick={stopTracking} style={{
-            marginTop: "auto",
-            background: "transparent", border: "1px solid #1c1c1c",
-            color: "#2e2e2e", padding: "10px", fontFamily: "inherit",
-            fontSize: 9, letterSpacing: "0.35em", cursor: "pointer"
-          }}>
-            STOP TRACKING
-          </button>
-        </div>
-
-      ) : (
-        /* No signals found yet */
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14 }}>
-          <div style={{ fontSize: 9, letterSpacing: "0.35em", color: "#2a2a2a", animation: "blink 1.5s infinite" }}>
-            {queryStatus === "scanning" ? "SCANNING FOR SIGNALS..." : "NO SIGNALS IN RANGE"}
-          </div>
-          {position && (
-            <div style={{ fontSize: 9, color: "#222", letterSpacing: "0.15em" }}>
-              {position.lat.toFixed(5)}, {position.lon.toFixed(5)}
-            </div>
-          )}
-        </div>
-      )}
+  items.innerHTML = list.map((l, i) => `
+    <div class="signal-chip${i === 0 ? ' primary' : ''}">
+      <div class="signal-chip-dot" style="background:${colors[l.sig.phase]};box-shadow:0 0 8px ${colors[l.sig.phase]}"></div>
+      <div class="signal-chip-dist">${l.dist < 1000 ? Math.round(l.dist)+'m' : (l.dist/1000).toFixed(1)+'km'}</div>
+      <div class="signal-chip-phase" style="color:${colors[l.sig.phase]}">${l.sig.phase.toUpperCase()}</div>
+      <div class="signal-chip-timer">${l.sig.timeLeft}s</div>
     </div>
-  );
+  `).join('');
 }
+
+// ═══════════════════════════════════════════════════════════
+// GPS
+// ═══════════════════════════════════════════════════════════
+function onPosition(pos) {
+  const { latitude: lat, longitude: lon, accuracy, speed } = pos.coords;
+
+  // Compute speed from GPS or estimate from position delta
+  if (speed != null && speed >= 0) {
+    userSpeedMph = speed * 2.237;
+  } else if (prevGpsPos) {
+    const d  = haversine(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
+    const dt = (Date.now() - prevGpsPos.t) / 1000;
+    if (dt > 0.5 && dt < 8) userSpeedMph = (d / dt) * 2.237;
+  }
+
+  // Compute heading from movement
+  if (prevGpsPos && haversine(prevGpsPos.lat, prevGpsPos.lon, lat, lon) > 5) {
+    userHeading = bearing(prevGpsPos.lat, prevGpsPos.lon, lat, lon);
+  }
+
+  prevGpsPos = { lat, lon, t: Date.now() };
+  userPos    = { lat, lon };
+
+  setGpsPill('active', `${lat.toFixed(4)}, ${lon.toFixed(4)}`);
+
+  // Update user marker
+  if (!userMarker) {
+    userMarker = makeUserMarker().addTo(map);
+    map.setView([lat, lon], 16);
+  } else {
+    userMarker.setLatLng([lat, lon]);
+  }
+
+  if (!accuracyCircle) {
+    accuracyCircle = L.circle([lat, lon], {
+      radius: accuracy,
+      color: '#2979ff',
+      fillColor: '#2979ff',
+      fillOpacity: 0.06,
+      weight: 1,
+      opacity: 0.3
+    }).addTo(map);
+  } else {
+    accuracyCircle.setLatLng([lat, lon]).setRadius(accuracy);
+  }
+}
+
+function onGpsError(err) {
+  setGpsPill('error', 'GPS ERROR');
+  showError('Location error: ' + err.message);
+}
+
+// ═══════════════════════════════════════════════════════════
+// START / STOP
+// ═══════════════════════════════════════════════════════════
+function handleMainBtn() {
+  if (!watching) startTracking(); else stopTracking();
+}
+
+function startTracking() {
+  if (!navigator.geolocation) {
+    showError('Geolocation not supported by this browser.');
+    return;
+  }
+
+  watching = true;
+  document.getElementById('mainBtn').textContent = 'STOP';
+  document.getElementById('mainBtn').classList.add('stop');
+  document.getElementById('recenterBtn').style.display = 'block';
+  setGpsPill('acquiring', 'ACQUIRING');
+
+  watchId = navigator.geolocation.watchPosition(onPosition, onGpsError, {
+    enableHighAccuracy: true,
+    maximumAge: 2000,
+    timeout: 12000
+  });
+
+  tickTimer = setInterval(tick, UPDATE_MS);
+}
+
+function stopTracking() {
+  watching = false;
+  if (watchId)    navigator.geolocation.clearWatch(watchId);
+  if (tickTimer)  clearInterval(tickTimer);
+
+  document.getElementById('mainBtn').textContent = 'START';
+  document.getElementById('mainBtn').classList.remove('stop');
+  document.getElementById('recenterBtn').style.display = 'none';
+  document.getElementById('advisoryCard').style.display = 'none';
+  document.getElementById('signalList').style.display = 'none';
+  hideNoSignal();
+  setGpsPill('', 'STANDBY');
+
+  if (userMarker)     { map.removeLayer(userMarker);     userMarker = null; }
+  if (accuracyCircle) { map.removeLayer(accuracyCircle); accuracyCircle = null; }
+  Object.values(lightMarkers).forEach(m => map.removeLayer(m));
+  lightMarkers = {};
+  lights = [];
+  lastQueryPos = null;
+  userPos = null;
+  prevGpsPos = null;
+}
+
+function recenter() {
+  if (userPos) map.setView([userPos.lat, userPos.lon], 16);
+}
+
+// ═══════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════
+function setGpsPill(state, label) {
+  const pill = document.getElementById('gpsPill');
+  pill.className = 'gps-pill' + (state ? ' ' + state : '');
+  document.getElementById('gpsLabel').textContent = label;
+}
+
+function setScanBadge(on) {
+  document.getElementById('scanBadge').classList.toggle('visible', on);
+}
+
+function showError(msg) {
+  const t = document.getElementById('errToast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  clearTimeout(t._hide);
+  t._hide = setTimeout(() => { t.style.display = 'none'; }, 5000);
+}
+
+function showNoSignal(msg) {
+  const el = document.getElementById('noSignalMsg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function hideNoSignal() {
+  document.getElementById('noSignalMsg').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════
+initMap();
 </script>
 </body>
 </html>
